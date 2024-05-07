@@ -1,53 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <inttypes.h>
-
-
-// 16-bit register
-typedef union register16_t
-{
-  struct
-  {
-    uint8_t LO;
-    uint8_t HI;
-  } reg;
-
-  uint16_t reg16;
-} register16_t;
-
-
-// Flag register
-#define ZERO_FLAG AF.reg.HI & 0x80
-#define SUBTRACT_FLAG AF.reg.HI & 0x40
-#define HALF_CARRY_FLAG AF.reg.HI & 0x20
-#define CARRY_FLAG AF.reg.HI & 0x10
-
-
-register16_t AF, BC, DE, HL, SP, PC;
-uint8_t opcode;
-uint8_t memory[0x10000];
-
-
-void dissassemble()
-{
-  while (1)
-  {
-    switch (opcode)
-    {
-      case 0x00:
-        printf("NOP\n");
-        break;
-      
-      case 0x01:
-        
-    }
-  }
-}
+#include "essentials.h"
 
 
 int main()
 {
-  // Load ROM
+  register16_t PC;
+  uint8_t opcode;
+  uint8_t memory[CART_SIZE];
+
+
+  // Load ROM into memory
   FILE *fptr = fopen("rom.gb", "rb");
   if (fptr == NULL)
   {
@@ -55,7 +18,7 @@ int main()
     exit(1);
   }
 
-  if (fread(memory, 1, 0x10000, fptr) != 0x10000)
+  if (fread(memory, 1, CART_SIZE, fptr) != CART_SIZE)
   {
     printf("Error! reading file");
     exit(1);
@@ -64,13 +27,38 @@ int main()
   fclose(fptr);
 
 
-  // Initialize registers
-  PC.reg.LO = memory[0x102];
-  PC.reg.HI = memory[0x103];
-  printf("Entry Point: 0x%04X\n", PC.reg16);
+  // Open output file
+  FILE *fout = fopen("output.txt", "w");
+  if (fout == NULL)
+  {
+    printf("Error! opening file");
+    exit(1);
+  }
 
 
-  dissassemble();
+  // Initialize program counter
+  PC.reg16 = 0;
 
+
+  // Disassemble
+  do {
+    fprintf(fout, "%04X:\t", PC.reg16);
+    opcode = memory[PC.reg16];
+
+    switch (opcode)
+    {
+      case 0x00:
+        fprintf(fout, "nop\n");
+        break;
+      
+      default:
+        fprintf(fout, "Unknown opcode: %02X", opcode);
+    }
+
+    PC.reg16++;
+  } while (PC.reg16 != CART_SIZE - 1);
+  
+
+  fclose(*fout);
   return 0;
 }
