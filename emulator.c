@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "essentials.h"
@@ -6,6 +7,7 @@
 register16_t af, bc, de, hl, sp, pc;
 uint8_t zf, nf, hf, cf;
 uint8_t memory[CART_SIZE], opcode;
+bool interrupts_enabled = true;
 
 
 int main()
@@ -30,9 +32,10 @@ int main()
   // Initialize registers
   af.reg16 = 0x0100;
   pc.reg16 = 0x0100;
+  sp.reg16 = 0xfffe;
   fprintf(stderr, "Entry Point:\t%04X\n", pc.reg16);
   uint8_t imm8;
-  uint16_t imm16;
+  register16_t imm16;
 
 
   do {
@@ -57,19 +60,64 @@ int main()
 
       case 0x3E:
         pc.reg16++;
-        af.reg.lo = memory[pc.reg16];
+        af.reg.hi = memory[pc.reg16];
 
-        fprintf(stderr, "ld\ta,\t%02X\n", af.reg.lo);
+        fprintf(stderr, "ld\ta,\t%02X\n", af.reg.hi);
+        break;
+      
+
+      case 0xAF:
+        af.reg.hi ^= af.reg.hi;
+        fprintf(stderr, "xor\ta,\ta");
+        fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
         break;
       
 
       case 0xC3:
-        imm16 = pc.reg16;
-        pc.reg.lo = memory[imm16 + 1];
-        pc.reg.hi = memory[imm16 + 2];
+        imm16.reg.lo = memory[pc.reg16 + 1];
+        imm16.reg.hi = memory[pc.reg16 + 2];
+        pc.reg16 = imm16.reg16;
 
         fprintf(stderr, "jp\t[%04X]\n", pc.reg16);
         continue;
+      
+
+      case 0xCD:
+        imm16.reg.lo = memory[pc.reg16 + 1];
+        imm16.reg.hi = memory[pc.reg16 + 2];
+        memory[sp.reg16] = pc.reg16 + 2;
+        sp.reg16--;
+        pc.reg16 = imm16.reg16;
+
+        fprintf(stderr, "call\t%04X\n", imm16.reg16);
+        continue;
+      
+
+      case 0xE0:
+        pc.reg16++;
+        imm16.reg16 = memory[pc.reg16] + 0xff00;
+        memory[imm16.reg16] = af.reg.hi;
+
+        fprintf(stderr, "ld\t[%04X],\ta", imm16.reg16);
+        fprintf(stderr, "\t\t%04X:\t%02X\n", imm16.reg16, memory[imm16.reg16]);
+        break;
+      
+
+      case 0xEA:
+        imm16.reg.lo = memory[pc.reg16 + 1];
+        imm16.reg.hi = memory[pc.reg16 + 2];
+        pc.reg16 += 2;
+        memory[imm16.reg16] = af.reg.hi;
+
+        fprintf(stderr, "ld\t[%04X],\ta", imm16.reg16);
+        fprintf(stderr, "\t\t[%04X]:\t%02X\n", imm16.reg16, memory[imm16.reg16]);
+        break;
+      
+
+      case 0xF3:
+        interrupts_enabled = false;
+        fprintf(stderr, "di\n");
+        break;
       
 
       case 0xFE:
