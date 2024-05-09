@@ -49,12 +49,43 @@ int main()
         break;
       
 
-      case 0x28:
+      case 0x18:
         pc.reg16++;
         imm8 = memory[pc.reg16];
         pc.reg.lo += imm8;
 
-        fprintf(stderr, "jrz\t0x%02X\n", imm8);
+        fprintf(stderr, "jr\t%d\n", (int8_t) imm8);
+        break;
+      
+
+      case 0x1F:
+        imm8 = cf;
+        cf = af.reg.hi & 0x01;
+        af.reg.hi = (af.reg.hi >> 1) | imm8 << 7;
+        zf = 0;
+        nf = 0;
+        hf = 0;
+
+        fprintf(stderr, "rra\t\t");
+        fprintf(stderr, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
+        break;
+      
+
+      case 0x20:
+        pc.reg16++;
+        imm8 = memory[pc.reg16];
+        if (!zf) pc.reg.lo += imm8;
+
+        fprintf(stderr, "jrnz\t%d\n", (int8_t) imm8);
+        break;
+      
+
+      case 0x28:
+        pc.reg16++;
+        imm8 = memory[pc.reg16];
+        if (zf) pc.reg.lo += imm8;
+
+        fprintf(stderr, "jrz\t%d\n", (int8_t) imm8);
         break;
       
 
@@ -66,10 +97,21 @@ int main()
         break;
       
 
+      case 0x47:
+        bc.reg.lo = af.reg.hi;
+        fprintf(stderr, "ld\tc,\ta");
+        fprintf(stderr, "\t\tc:\t%02X\n", bc.reg.lo);
+        break;
+      
+
       case 0xAF:
         af.reg.hi ^= af.reg.hi;
+        zf = 1;
+        nf = 0;
+        hf = 0;
+        cf = 0;
         fprintf(stderr, "xor\ta,\ta");
-        fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
+        fprintf(stderr, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
         break;
       
 
@@ -80,6 +122,22 @@ int main()
 
         fprintf(stderr, "jp\t[%04X]\n", pc.reg16);
         continue;
+      
+
+      case 0xCB:
+        pc.reg16++;
+        opcode = memory[pc.reg16];
+        switch (opcode) {
+          case 0x87:
+            af.reg.hi &= 0xFD;
+            fprintf(stderr, "res\tbit1,\ta");
+            fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
+            break;
+
+          default:
+            fprintf(stderr, "Unknown CB prefix instruction");
+        }
+        break;
       
 
       case 0xCD:
@@ -98,7 +156,7 @@ int main()
         imm16.reg16 = memory[pc.reg16] + 0xff00;
         memory[imm16.reg16] = af.reg.hi;
 
-        fprintf(stderr, "ld\t[%04X],\ta", imm16.reg16);
+        fprintf(stderr, "ldh\t[%04X],\ta", imm16.reg16);
         fprintf(stderr, "\t\t%04X:\t%02X\n", imm16.reg16, memory[imm16.reg16]);
         break;
       
@@ -111,6 +169,16 @@ int main()
 
         fprintf(stderr, "ld\t[%04X],\ta", imm16.reg16);
         fprintf(stderr, "\t\t[%04X]:\t%02X\n", imm16.reg16, memory[imm16.reg16]);
+        break;
+      
+
+      case 0xF0:
+        pc.reg16++;
+        imm16.reg16 = 0xff00 + memory[pc.reg16];
+        af.reg.hi = memory[imm16.reg16];
+
+        fprintf(stderr, "ldh\ta,\t[%04X]", imm16.reg16);
+        fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
         break;
       
 
