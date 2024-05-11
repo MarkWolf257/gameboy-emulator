@@ -1,6 +1,8 @@
 #include <inttypes.h>
 
 #define CART_SIZE 0x10000
+#define CYCLES_PER_LINE 114
+#define VERTICAL_LINES 154
 
 
 // 16-bit register
