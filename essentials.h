@@ -1,6 +1,7 @@
 #include <inttypes.h>
 
-#define CART_SIZE 0x10000
+#define MEMORY_SIZE 0x10000
+#define BANK_SIZE 0x4000
 #define CYCLES_PER_LINE 114
 #define VERTICAL_LINES 154
 

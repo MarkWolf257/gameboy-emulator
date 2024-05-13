@@ -6,7 +6,7 @@
 
 register16_t af, bc, de, hl, sp, pc;
 uint8_t zf, nf, hf, cf;
-uint8_t memory[CART_SIZE], opcode, cycle_count;
+uint8_t memory[MEMORY_SIZE], opcode, cycle_count;
 bool interrupts_enabled = true;
 
 
@@ -28,7 +28,7 @@ int main()
     exit(1);
   }
 
-  if (fread(memory, 1, CART_SIZE, fptr) != CART_SIZE)
+  if (fread(memory, 1, BANK_SIZE * 2, fptr) != BANK_SIZE * 2)
   {
     printf("Error! reading file");
     exit(1);
