@@ -6,7 +6,13 @@
 #define VERTICAL_LINES 154
 
 
-// 16-bit register
+// Memory
+uint8_t  memory[MEMORY_SIZE];
+
+
+// Register types
+typedef uint8_t register8_t;
+
 typedef union register16_t
 {
   struct
