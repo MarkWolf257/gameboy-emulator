@@ -11,6 +11,7 @@
 static register16_t af, bc, de, hl, sp, pc;
 static uint8_t zf, nf, hf, cf;
 static uint8_t cycle_count = 0;
+static bool interrupts_enabled = true;
 
 
 static inline void nop()
@@ -22,7 +23,26 @@ static inline void nop()
   #endif
 }
 
-static inline void jr_cc(uint8_t cc)
+static inline void jp_cc(uint8_t cc, const char *name)
+{
+  uint16_t n16 = pc.reg16;
+  pc.reg.lo = memory[++n16];
+  pc.reg.hi = memory[++n16];
+  cycle_count += 3;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "jp%s\t%04X\n", name, pc.reg16);
+  #endif
+
+  if (cc) {
+    pc.reg16--;
+    cycle_count += 1;
+  } else {
+    pc.reg16 = n16;
+  }
+}
+
+static inline void jr_cc(uint8_t cc, const char *name)
 {
   uint8_t n8 = memory[++pc.reg16];
   if (cc)
@@ -33,39 +53,72 @@ static inline void jr_cc(uint8_t cc)
   cycle_count += 2;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "jrz\t%d\n", (int8_t) n8);
+  fprintf(LOG_FILE, "jr%s\t%d\n", name, (int8_t) n8);
   #endif
 }
 
+static inline void ld_r8_r8(register8_t *r8l, const char *namel, register8_t r8r, const char *namer)
+{
+  *r8l = r8r;
+  cycle_count += 1;
 
-static inline void ld_r8_n8(register8_t *r8)
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ld\t%s,\t%s", namel, namer);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\n", namel, *r8l);
+  #endif
+}
+
+static inline void ld_mhl_r8(int op, const char opname, register8_t r8, const char *name)
+{
+  memory[hl.reg16] = r8;
+  hl.reg16 += op;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ld\t[hl%c],\t%s", opname, name);
+  fprintf(LOG_FILE, "\t\thl:\t%04X\n", hl.reg16);
+  #endif
+}
+
+static inline void ld_r8_mhl(register8_t *r8, const char *name, int op, const char opname)
+{
+  *r8 = memory[hl.reg16];
+  hl.reg16 += op;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ld\t%s,\t[hl%c]", name, opname);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\thl:\t%04X\n", name, *r8, hl.reg16);
+  #endif
+}
+
+static inline void ld_r8_n8(register8_t *r8, const char *name)
 {
   *r8 = memory[++pc.reg16];
   cycle_count += 2;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "ld\tb,\t%02X\n", *r8);
+  fprintf(LOG_FILE, "ld\t%s,\t%02X\n", name, *r8);
   #endif
 }
 
-
-static inline void ld_r16_n16(register16_t *r16)
+static inline void ld_r16_n16(register16_t *r16, const char *name)
 {
-  r16->reg.hi = memory[++pc.reg16];
   r16->reg.lo = memory[++pc.reg16];
+  r16->reg.hi = memory[++pc.reg16];
   cycle_count += 3;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "ld\tbc,\t%04X\n", r16->reg16);
+  fprintf(LOG_FILE, "ld\t%s,\t%04X\n", name, r16->reg16);
   #endif
 }
 
-static inline void ld_m16_r8(register8_t *r8, const char *name)
+static inline void ld_m16_r8(register8_t r8, const char *name)
 {
   register16_t m16;
   m16.reg.lo = memory[++pc.reg16];
   m16.reg.hi = memory[++pc.reg16];
-  memory[m16.reg16] = *r8;
+  memory[m16.reg16] = r8;
   cycle_count += 4;
 
   #ifdef GENERATE_LOGS
@@ -74,32 +127,148 @@ static inline void ld_m16_r8(register8_t *r8, const char *name)
   #endif
 }
 
-static inline void xor_r8_r8(register8_t *r8l, register8_t *r8r, const char *namel, const char *namer)
+static inline void ld_mr16_r8(register16_t *r16, const char *name16, register8_t r8, const char *name8)
 {
-  *r8l ^= *r8r;
+  memory[r16->reg16] = r8;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ld\t[%s],\t%s", name16, name8);
+  fprintf(LOG_FILE, "\t\t[%s]:\t%02X\n", name16, memory[r16->reg16]);
+  #endif
+}
+
+static inline void ld_r8_m16(register8_t *r8, const char *name)
+{
+  register16_t m16;
+  m16.reg.lo = memory[++pc.reg16];
+  m16.reg.hi = memory[++pc.reg16];
+  *r8 = memory[m16.reg16];
+  cycle_count += 4;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ld\t%s,\t[%04X]", name, m16.reg16);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\n", name, *r8);
+  #endif
+}
+
+static inline void ldh_r8_m8(register8_t *r8, const char *name)
+{
+  register16_t m16;
+  m16.reg16 = 0xff00 + memory[++pc.reg16];
+  *r8 = memory[m16.reg16];
+  cycle_count += 3;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ldh\t%s,\t[%04X]", name, m16.reg16);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\n", name, *r8);
+  #endif
+}
+
+static inline void ldh_m8_r8(register8_t r8, const char *name)
+{
+  register16_t m16;
+  m16.reg16 = memory[++pc.reg16] | 0xff00;
+  memory[m16.reg16] = r8;
+  cycle_count += 3;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ldh\t[%04X],\t%s", m16.reg16, name);
+  fprintf(LOG_FILE, "\t\t[%04X]:\t%02X\n", m16.reg16, memory[m16.reg16]);
+  #endif
+}
+
+static inline void ld_mc_r8(register8_t r8, const char *name)
+{
+  memory[bc.reg.lo + 0xff00] = r8;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ld\t[c],\t%s", name);
+  fprintf(LOG_FILE, "\t\tc:\t%02X\t[c]:\t%02X\n", bc.reg.lo, memory[bc.reg.lo + 0xff00]);
+  #endif
+}
+
+static inline void add_r16_r16(register16_t *r16l, const char *namel, register16_t r16r, const char *namer)
+{
+  uint16_t tmp = r16l->reg16;
+  hf = (r16l->reg16 & 0x0fff + r16r.reg16 & 0x0fff) > 0x0fff;
+  r16l->reg16 += r16r.reg16;
+  nf = 0;
+  cf = tmp > r16l->reg16;
+  cycle_count += 2;
+  
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "add\t%s,\t%s", namel, namer);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\n", namel, r16l->reg16);
+  #endif
+}
+
+static inline void xor_r8_r8(register8_t *r8l, const char *namel, register8_t r8r, const char *namer)
+{
+  *r8l ^= r8r;
   zf = !(*r8l);
   nf = 0; hf = 0; cf =0;
   cycle_count += 1;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "xor\t%s\t%s", namel, namer);
+  fprintf(LOG_FILE, "xor\t%s,\t%s", namel, namer);
   fprintf(LOG_FILE, "\t\t%s:\t%02X\tznhc:\t%d%d%d%d\n", namel, *r8l, zf, nf, hf, cf);
   #endif
 }
 
-static inline void jp()
+static inline void or_r8_r8(register8_t *r8l, const char *namel, register8_t r8r, const char *namer)
 {
-  uint16_t n16 = pc.reg16;
-  pc.reg.lo = memory[n16 + 1];
-  pc.reg.hi = memory[n16 + 2];
-  cycle_count += 4;
+  *r8l |= r8r;
+  zf = !(*r8l);
+  nf = 0; hf = 0; cf =0;
+  cycle_count += 1;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "jp\t%04X\n", pc.reg16);
+  fprintf(LOG_FILE, "or\t%s,\t%s", namel, namer);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\tznhc:\t%d%d%d%d\n", namel, *r8l, zf, nf, hf, cf);
   #endif
 }
 
-static inline void dec_r8(register8_t *r8)
+static inline void and_r8_r8(register8_t *r8l, const char *namel, register8_t r8r, const char *namer)
+{
+  *r8l &= r8r;
+  zf = !(*r8l);
+  nf = 0; hf = 1; cf =0;
+  cycle_count += 1;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "and\t%s,\t%s", namel, namer);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\tznhc:\t%d%d%d%d\n", namel, *r8l, zf, nf, hf, cf);
+  #endif
+}
+
+static inline void and_r8_n8(register8_t *r8, const char *name)
+{
+  *r8 &= memory[++pc.reg16];
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "and\t%s,\t%02X", name, memory[pc.reg16]);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\n", name, *r8);
+  #endif
+}
+
+static inline void inc_r8(register8_t *r8, const char *name)
+{
+  (*r8)++;
+  zf = !(*r8);
+  nf = 0;
+  hf = !((*r8) & 0xf);
+  cycle_count += 1;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "inc\t%s\t", name);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\tznhc:\t%d%d%d%d\n", name, *r8, zf, nf, hf, cf);
+  #endif
+}
+
+static inline void dec_r8(register8_t *r8, const char *name)
 {
   hf = !((*r8) & 0xf);
   (*r8)--;
@@ -108,22 +277,154 @@ static inline void dec_r8(register8_t *r8)
   cycle_count += 1;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "dec\tb\n");
+  fprintf(LOG_FILE, "dec\t%s\t", name);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\tznhc:\t%d%d%d%d\n", name, *r8, zf, nf, hf, cf);
   #endif
 }
 
-static inline void cp_r8_n8(register8_t *r8, const char *name)
+static inline void inc_r16(register16_t *r16, const char *name)
+{
+  r16->reg16++;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "inc\t%s\t", name);
+  fprintf(LOG_FILE, "\t\t%s:\t%04X\n", name, r16->reg16);
+  #endif
+}
+
+static inline void dec_r16(register16_t *r16, const char *name)
+{
+  r16->reg16--;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "dec\t%s\t", name);
+  fprintf(LOG_FILE, "\t\t%s:\t%04X\n", name, r16->reg16);
+  #endif
+}
+
+static inline void cp_r8_n8(register8_t r8, const char *name)
 {
   uint8_t n8 = memory[++pc.reg16];
-  zf = *r8 == n8;
+  zf = r8 == n8;
   nf = 1;
-  hf = ((*r8 & 0x0f + n8 % 0x0f) & 0x10) >> 4;
-  cf = *r8 < n8;
+  hf = ((r8 & 0x0f + n8 % 0x0f) & 0x10) >> 4;
+  cf = r8 < n8;
   cycle_count += 2;
 
   #ifdef GENERATE_LOGS
   fprintf(LOG_FILE, "cp\t%s,\t0x%02X", name, n8);
   fprintf(LOG_FILE, "\t\tznhc:\t%d%d%d%d\n", zf, nf, hf, cf);
+  #endif
+}
+
+static inline void cp_r8_r8(register8_t r8l, const char *namel, register8_t r8r, const char *namer)
+{
+  zf = r8l == r8r;
+  nf = 1;
+  hf = ((r8l & 0x0f + r8r % 0x0f) & 0x10) >> 4;
+  cf = r8l < r8r;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "cp\t%s,\t%s", namel, namer);
+  fprintf(LOG_FILE, "\t\tznhc:\t%d%d%d%d\n", zf, nf, hf, cf);
+  #endif
+}
+
+static inline void res_bitn_r8(uint8_t n, register8_t *r8, const char *name)
+{
+  *r8 &= ~(1 << n);
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "res\tbit%d,\t%s", n, name);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\n", name, *r8);
+  #endif
+}
+
+static inline void set_bitn_r8(uint8_t n, register8_t *r8, const char *name)
+{
+  *r8 |= (1 << n);
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "set\tbit%d,\t%s", n, name);
+  fprintf(LOG_FILE, "\t\t%s:\t%02X\n", name, *r8);
+  #endif
+}
+
+static inline void push_r16(register16_t r16, const char *name)
+{
+  memory[sp.reg16--] = r16.reg.hi;
+  memory[sp.reg16--] = r16.reg.lo;
+  cycle_count += 4;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "push\t%s\n", name);
+  #endif
+}
+
+static inline void pop_r16(register16_t *r16, const char *name)
+{
+  r16->reg.lo = memory[++sp.reg16];
+  r16->reg.hi = memory[++sp.reg16];
+  cycle_count += 3;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "pop\t%s\t", name);
+  fprintf(LOG_FILE, "\t\t%s:\t%04X\n", name, r16->reg16);
+  #endif
+}
+
+static inline void call_n16()
+{
+  register16_t n16;
+  n16.reg.lo = memory[++pc.reg16];
+  n16.reg.hi = memory[++pc.reg16];
+  memory[sp.reg16--] = pc.reg.hi;
+  memory[sp.reg16--] = pc.reg.lo;
+  pc.reg16 = n16.reg16;
+  cycle_count += 6;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "call\t%04X\n", pc.reg16);
+  #endif
+}
+
+static inline void ret()
+{
+  pc.reg.lo = memory[++sp.reg16];
+  pc.reg.hi = memory[++sp.reg16];
+  cycle_count += 4;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ret\n");
+  #endif
+}
+
+static inline void ret_cc(uint8_t cc, const char *name)
+{
+  if (cc) {
+    pc.reg.lo = memory[++sp.reg16];
+    pc.reg.hi = memory[++sp.reg16];
+    cycle_count += 3;
+  }
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "ret%s\n", name);
+  #endif
+}
+
+static inline void interrupts(bool b)
+{
+  interrupts_enabled = b;
+  cycle_count += 1;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "di\n");
   #endif
 }
 
@@ -141,7 +442,7 @@ int main()
 {
   uint8_t opcode, n8;
   uint16_t n16;
-  bool interrupts_enabled = true;
+  
 
 
   // Load ROM into memory
@@ -177,113 +478,33 @@ int main()
 
     switch (opcode)
     {
-      case 0x00:
-        nop();
-        break;
+      case 0x00:  nop();  break;
+
+      case 0x01:  ld_r16_n16(&bc, "bc");  break;
+
+      case 0x05:  dec_r8(&(bc.reg.hi), "b");  break;
+
+      case 0x06:  ld_r8_n8(&(bc.reg.hi), "b"); break;
+
+      case 0x09:  add_r16_r16(&hl, "hl", bc, "bc"); break;
+
+      case 0x0B:  dec_r16(&bc, "bc"); break;
+
+      case 0x0C:  inc_r8(&(bc.reg.lo), "c");  break;
+
+      case 0x0E:  ld_r8_n8(&(bc.reg.lo), "c");  break;
+
+      case 0x11:  ld_r16_n16(&de, "de");  break;
+
+      case 0x12:  ld_mr16_r8(&de, "de", af.reg.hi, "a");  break;
+
+      case 0x13:  inc_r16(&de, "de"); break;
       
+      case 0x15:  dec_r8(&(de.reg.hi), "d");  break;
 
-      case 0x01:
-        ld_r16_n16(&bc);
-        break;
-      
+      case 0x18:  jr_cc(true, "");  break;
 
-      case 0x05:
-        dec_r8(&(bc.reg.hi));
-        break;
-      
-
-      case 0x06:
-        ld_r8_n8(&(bc.reg.hi));
-        break;
-      
-
-      // case 0x09:
-      //   hl.reg16 += bc.reg16;
-      //   nf = 0;
-      //   hf = (hl.reg16 & 0x0fff + bc.reg16 & 0x0fff) > 0x0fff;
-      //   cf = (hl.reg16 & 0x0fff + bc.reg16 & 0x0fff) > 0x0fff;
-      //   fprintf(stderr, "add\thl,\tbc");
-      //   fprintf(stderr, "\t\thl:\t%02X\n", hl.reg16);
-      //   cycle_count += 2;
-      //   break;
-      
-
-      // case 0x0B:
-      //   bc.reg16--;
-      //   fprintf(stderr, "dec\tbc\t");
-      //   fprintf(stderr, "\t\tbc:\t%04X\n", bc.reg16);
-      //   cycle_count += 2;
-      //   break;
-      
-
-      // case 0x0C:
-      //   bc.reg.lo++;
-      //   zf = !bc.reg.lo;
-      //   nf = 0;
-      //   hf = !(bc.reg.lo & 0x0f);
-      //   fprintf(stderr, "inc\tc\t");
-      //   fprintf(stderr, "\t\tc:\t%02X\tznhc:\t%d%d%d%d\n", bc.reg.lo, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
-      
-
-      // case 0x0E:
-      //   bc.reg.lo = memory[++pc.reg16];
-      //   fprintf(stderr, "ld\tc,\t%02X\n", bc.reg.lo);
-      //   cycle_count += 2;
-      //   break;
-      
-
-      // case 0x11:
-      //   de.reg.lo = memory[++pc.reg16];
-      //   de.reg.hi = memory[++pc.reg16];
-      //   fprintf(stderr, "ld\tde,\t%04X\n", de.reg16);
-      //   cycle_count += 3;
-      //   break;
-      
-
-      // case 0x12:
-      //   memory[de.reg16] = af.reg.hi;
-      //   fprintf(stderr, "ld\t[de],\ta");
-      //   fprintf(stderr, "\t\t[de]:\t%02X\n", memory[de.reg16]);
-      //   cycle_count += 2;
-      //   break;
-      
-
-      // case 0x13:
-      //   de.reg16++;
-      //   fprintf(stderr, "inc\tde\t");
-      //   fprintf(stderr, "\t\tde:\t%02X\n", de.reg16);
-      //   cycle_count += 2;
-      //   break;
-
-      
-      // case 0x15:
-      //   hf = !(de.reg.hi & 0x0f);
-      //   de.reg.hi--;
-      //   zf = !de.reg.hi;
-      //   nf = 1;
-
-      //   fprintf(stderr, "dec\td\t");
-      //   fprintf(stderr, "\t\td:\t%02X\tznhc:\t%d%d%d%d\n", de.reg.hi, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
-      
-
-      case 0x18:  jr_cc(true);  break;
-      
-
-      // case 0x1D:
-      //   hf = !(de.reg.lo & 0x0f);
-      //   de.reg.lo--;
-      //   zf = !de.reg.lo;
-      //   nf = 1;
-
-      //   fprintf(stderr, "dec\te\t");
-      //   fprintf(stderr, "\t\te:\t%02X\tznhc:\t%d%d%d%d\n", de.reg.lo, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
-      
+      case 0x1D:  dec_r8(&(de.reg.lo), "e");  break;
 
       // case 0x1F:
       //   imm8 = cf;
@@ -299,460 +520,175 @@ int main()
       //   break;
       
 
-      // case 0x20:
-      //   pc.reg16++;
-      //   imm8 = memory[pc.reg16];
-      //   if (!zf) {
-      //     pc.reg16 = (int16_t) pc.reg16 + (int8_t) imm8;;
-      //     cycle_count += 1;
-      //   }
-
-      //   fprintf(stderr, "jrnz\t%d\n", (int8_t) imm8);
-      //   cycle_count += 2;
-      //   break;
+      case 0x20:  jr_cc(!zf, "nz"); break;
       
 
-      // case 0x21:
-      //   hl.reg.lo = memory[++pc.reg16];
-      //   hl.reg.hi = memory[++pc.reg16];
-
-      //   fprintf(stderr, "ld\thl,\t%04X\n", hl.reg16);
-      //   cycle_count += 3;
-      //   break;
+      case 0x21:  ld_r16_n16(&hl, "hl");  break;
       
 
-      // case 0x22:
-      //   memory[hl.reg16++] = af.reg.hi;
-      //   fprintf(stderr, "ld\t[hl+],\ta\n");
-      //   cycle_count += 2;
-      //   break;
+      case 0x22:  ld_mhl_r8(1, '+', af.reg.hi, "a"); break;
       
 
-      // case 0x23:
-      //   hl.reg16++;
-      //   fprintf(stderr, "inc\thl\t");
-      //   fprintf(stderr, "\t\thl:\t%04X\n", hl.reg16);
-      //   cycle_count += 2;
-      //   break;
+      case 0x23:  inc_r16(&hl, "hl"); break;
       
 
-      // case 0x26:
-      //   hl.reg.hi = memory[++pc.reg16];
-      //   fprintf(stderr, "ld\th,\t%02X\n", hl.reg.hi);
-      //   cycle_count += 2;
-      //   break;
+      case 0x26:  ld_r8_n8(&(hl.reg.hi), "h");  break;
       
 
-      case 0x28:  jr_cc(zf);  break;
+      case 0x28:  jr_cc(zf, "z");  break;
       
 
-      // case 0x2A:
-      //   af.reg.hi = memory[hl.reg16++];
-      //   fprintf(stderr, "ld\ta,\t[hl+]");
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 2;
-      //   break;
+      case 0x2A:  ld_r8_mhl(&(af.reg.hi), "a", 1, '+'); break;
       
 
-      // case 0x2B:
-      //   hl.reg16--;
-      //   fprintf(stderr, "dec\thl\t");
-      //   fprintf(stderr, "\t\thl:\t%04X\n", hl.reg16);
-      //   cycle_count += 2;
-      //   break;
+      case 0x2B:  dec_r16(&hl, "hl"); break;
       
 
-      // case 0x31:
-      //   sp.reg.lo = memory[++pc.reg16];
-      //   sp.reg.hi = memory[++pc.reg16];
-
-      //   fprintf(stderr, "ld\tsp,\t%04X\n", sp.reg16);
-      //   cycle_count += 3;
-      //   break;
+      case 0x31:  ld_r16_n16(&sp, "sp");  break;
       
 
-      // case 0x36:
-      //   memory[hl.reg16] = memory[++pc.reg16];
-      //   fprintf(stderr, "ld\t[hl],\t%02X\n", memory[hl.reg16]);
-      //   cycle_count += 3;
-      //   break;
+      case 0x36:  ld_r8_n8(&memory[hl.reg16], "[hl]");  cycle_count += 1; break;
       
 
-      // case 0x3D:
-      //   hf = !(af.reg.hi & 0x0f);
-      //   af.reg.hi--;
-      //   zf = !af.reg.hi;
-      //   nf = 1;
-
-      //   fprintf(stderr, "dec\ta\t");
-      //   fprintf(stderr, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
+      case 0x3D:  dec_r8(&(af.reg.hi), "a");  break;
       
 
-      // case 0x3E:
-      //   pc.reg16++;
-      //   af.reg.hi = memory[pc.reg16];
-
-      //   fprintf(stderr, "ld\ta,\t%02X\n", af.reg.hi);
-      //   cycle_count += 2;
-      //   break;
+      case 0x3E:  ld_r8_n8(&(af.reg.hi), "a");  break;
       
 
-      // case 0x47:
-      //   bc.reg.hi = af.reg.hi;
-      //   fprintf(stderr, "ld\tb,\ta");
-      //   fprintf(stderr, "\t\tb:\t%02X\n", bc.reg.hi);
-      //   cycle_count += 1;
-      //   break;
+      case 0x47:  ld_r8_r8(&(bc.reg.hi), "b", af.reg.hi, "a");  break;
       
 
-      // case 0x4F:
-      //   bc.reg.lo = af.reg.hi;
-      //   fprintf(stderr, "ld\tc,\ta");
-      //   fprintf(stderr, "\t\tc:\t%02X\n", bc.reg.lo);
-      //   cycle_count += 1;
-      //   break;
+      case 0x4F:  ld_r8_r8(&(bc.reg.lo), "c", af.reg.hi, "a");  break;
       
 
-      // case 0x57:
-      //   de.reg.hi = af.reg.hi;
-      //   fprintf(stderr, "ld\td,\ta");
-      //   fprintf(stderr, "\t\td:\t%02X\n", de.reg.hi);
-      //   cycle_count += 1;
-      //   break;
+      case 0x57:  ld_r8_r8(&(de.reg.hi), "d", af.reg.hi, "a");  break;
       
 
-      // case 0x5F:
-      //   de.reg.lo = af.reg.hi;
-      //   fprintf(stderr, "ld\te,\ta");
-      //   fprintf(stderr, "\t\te:\t%02X\n", de.reg.lo);
-      //   cycle_count += 1;
-      //   break;
+      case 0x5F:  ld_r8_r8(&(de.reg.lo), "e", af.reg.hi, "a");  break;
       
 
-      // case 0x62:
-      //   hl.reg.hi = de.reg.hi;
-      //   fprintf(stderr, "ld\th,\td");
-      //   fprintf(stderr, "\t\th:\t%02X\n", hl.reg.hi);
-      //   cycle_count += 1;
-      //   break;
+      case 0x62:  ld_r8_r8(&(hl.reg.hi), "h", de.reg.hi, "d");  break;
       
 
-      // case 0x6B:
-      //   hl.reg.lo = de.reg.lo;
-      //   fprintf(stderr, "ld\tl,\te");
-      //   fprintf(stderr, "\t\tl:\t%02X\n", hl.reg.lo);
-      //   cycle_count += 1;
-      //   break;
+      case 0x6B:  ld_r8_r8(&(hl.reg.lo), "l", de.reg.lo, "e");  break;
       
 
-      // case 0x78:
-      //   af.reg.hi = bc.reg.hi;
-      //   fprintf(stderr, "ld\ta,\tb");
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 1;
-      //   break;
+      case 0x78:  ld_r8_r8(&(af.reg.hi), "a", bc.reg.hi, "b");  break;
       
 
-      // case 0x79:
-      //   af.reg.hi = bc.reg.lo;
-      //   fprintf(stderr, "ld\ta,\tc");
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 1;
-      //   break;
+      case 0x79:  ld_r8_r8(&(af.reg.hi), "a", bc.reg.lo, "c");  break;
       
 
-      // case 0x7A:
-      //   af.reg.hi = de.reg.hi;
-      //   fprintf(stderr, "ld\ta,\td");
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 1;
-      //   break;
+      case 0x7A:  ld_r8_r8(&(af.reg.hi), "a", de.reg.hi, "d");  break;
       
 
-      // case 0x7E:
-      //   af.reg.hi = memory[hl.reg16];
-      //   fprintf(stderr, "ld\ta,\t[hl]");
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 2;
-      //   break;
+      case 0x7E:  ld_r8_mhl(&(af.reg.hi), "a", 0, ' '); break;
       
 
-      // case 0xA7:
-      //   af.reg.hi &= af.reg.hi;
-      //   zf = !af.reg.hi;
-      //   nf = 0;
-      //   hf = 1;
-      //   cf = 0;
-
-      //   fprintf(stderr, "and\ta,\ta");
-      //   fprintf(stderr, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
+      case 0xA7:  and_r8_r8(&(af.reg.hi), "a", af.reg.hi, "a");  break;
       
 
-      // case 0xAB:
-      //   af.reg.hi ^= de.reg.lo;
-      //   zf = !af.reg.hi;
-      //   nf = 0;
-      //   hf = 0;
-      //   cf = 0;
-      //   fprintf(stderr, "xor\ta,\te");
-      //   fprintf(stderr, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
+      case 0xAB:  xor_r8_r8(&(af.reg.hi), "a", de.reg.lo, "e"); break;
       
 
-      case 0xAF:  xor_r8_r8(&(af.reg.hi), &(af.reg.hi), "a", "a");  break;
+      case 0xAF:  xor_r8_r8(&(af.reg.hi), "a", af.reg.hi, "a");  break;
       
 
-      // case 0xB0:
-      //   af.reg.hi |= bc.reg.hi;
-      //   zf = !af.reg.hi;
-      //   nf = 0;
-      //   hf = 0;
-      //   cf = 0;
-      //   fprintf(stderr, "or\ta,\tb");
-      //   fprintf(stderr, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
+      case 0xB0:  or_r8_r8(&(af.reg.hi), "a", bc.reg.hi, "b");  break;
       
 
-      // case 0xB1:
-      //   af.reg.hi |= bc.reg.lo;
-      //   zf = !af.reg.hi;
-      //   nf = 0;
-      //   hf = 0;
-      //   cf = 0;
-      //   fprintf(stderr, "or\ta,\tc");
-      //   fprintf(stderr, "\t\ta:\t%02X,\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
+      case 0xB1:  or_r8_r8(&(af.reg.hi), "a", bc.reg.lo, "c");  break;
       
 
-      // case 0xB8:
-      //   zf = af.reg.hi == bc.reg.hi;
-      //   nf = 1;
-      //   hf = (af.reg.hi & 0xf + bc.reg.hi & 0xf) & 0x10;
-      //   cf = af.reg.hi < bc.reg.hi;
-        
-      //   fprintf(stderr, "cp\ta,\tb");
-      //   fprintf(stderr, "\t\tznhc:\t%d%d%d%d\n", zf, nf, hf, cf);
-      //   cycle_count += 1;
-      //   break;
+      case 0xB8:  cp_r8_r8(af.reg.hi, "a", bc.reg.hi, "b"); break;
       
 
-      case 0xC3:  jp(); continue;
+      case 0xC3:  jp_cc(true, ""); break;
       
 
-      // case 0xC5:
-      //   memory[sp.reg16--] = bc.reg.hi;
-      //   memory[sp.reg16--] = bc.reg.lo;
-      //   fprintf(stderr, "push\tbc\n");
-      //   cycle_count += 4;
-      //   break;
+      case 0xC5:  push_r16(bc, "bc"); break;
       
 
-      // case 0xC8:
-      //   if (zf) {
-      //     pc.reg.lo = memory[++sp.reg16];
-      //     pc.reg.hi = memory[++sp.reg16];
-      //     cycle_count += 3;
-      //   }
-      //   fprintf(stderr, "retz\n");
-      //   cycle_count += 2;
-      //   break;
+      case 0xC8:  ret_cc(zf, "z");  break;
       
 
-      // case 0xC9:
-      //   pc.reg.lo = memory[++sp.reg16];
-      //   pc.reg.hi = memory[++sp.reg16];
-
-      //   fprintf(stderr, "ret\n");
-      //   cycle_count += 4;
-      //   break;
+      case 0xC9:  ret();  break;
       
 
-      // case 0xCA:
-      //   imm16.reg.lo = memory[++pc.reg16];
-      //   imm16.reg.hi = memory[++pc.reg16];
-
-      //   fprintf(stderr, "jpz\t%04X\n", imm16.reg16);
-      //   if (zf) {
-      //     pc.reg16 = imm16.reg16;
-      //     continue;
-      //   }
-      //   break;
+      case 0xCA:  jp_cc(zf, "z"); break;
       
 
-      // case 0xCB:
-      //   pc.reg16++;
-      //   opcode = memory[pc.reg16];
-      //   switch (opcode) {
-      //     case 0x87:
-      //       af.reg.hi &= 0xFD;
-      //       fprintf(stderr, "res\tbit1,\ta");
-      //       fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //       cycle_count += 2;
-      //       break;
+      case 0xCB:
+        pc.reg16++;
+        opcode = memory[pc.reg16];
+        switch (opcode) {
+          case 0x87:  res_bitn_r8(1, &(af.reg.hi), "a");  break;
           
-      //     case 0xCF:
-      //       af.reg.hi |= 0x02;
-      //       fprintf(stderr, "set\tbit1,\ta");
-      //       fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //       cycle_count += 2;
-      //       break;
+          case 0xCF:  set_bitn_r8(1, &(af.reg.hi), "a");  break;
 
-      //     default:
-      //       fprintf(stderr, "Unknown CB prefix instruction");
-      //       exit(1);
-      //   }
-      //   break;
+          default:
+            fprintf(stderr, "Unknown CB prefix instruction");
+            exit(1);
+        }
+        break;
       
 
-      // case 0xCD:
-      //   imm16.reg.lo = memory[pc.reg16 + 1];
-      //   imm16.reg.hi = memory[pc.reg16 + 2];
-      //   pc.reg16 += 2;
-      //   memory[sp.reg16--] = pc.reg.hi;
-      //   memory[sp.reg16--] = pc.reg.lo;
-      //   pc.reg16 = imm16.reg16;
-
-      //   fprintf(stderr, "call\t%04X\n", imm16.reg16);
-      //   cycle_count += 6;
-      //   continue;
+      case 0xCD:  call_n16(); continue;
       
       
-      // case 0xD1:
-      //   de.reg.lo = memory[++sp.reg16];
-      //   de.reg.hi = memory[++sp.reg16];
-      //   fprintf(stderr, "pop\tde\n");
-      //   cycle_count += 3;
-      //   break;
+      case 0xD1:  pop_r16(&de, "de"); break;
       
 
-      // case 0xD2:
-      //   imm16.reg.lo = memory[++pc.reg16];
-      //   imm16.reg.hi = memory[++pc.reg16];
-
-      //   fprintf(stderr, "jpnc\t%04X\n", imm16.reg16);
-      //   if (!cf) {
-      //     pc.reg16 = imm16.reg16;
-      //     continue;
-      //   }
-      //   break;
+      case 0xD2:  jp_cc(!cf, "nc"); break;
       
 
-      // case 0xD5:
-      //   memory[sp.reg16--] = de.reg.hi;
-      //   memory[sp.reg16--] = de.reg.lo;
-      //   fprintf(stderr, "push\tde\n");
-      //   cycle_count += 4;
-      //   break;
+      case 0xD5:  push_r16(de, "de");  break;
       
 
-      // case 0xE0:
-      //   pc.reg16++;
-      //   imm16.reg16 = memory[pc.reg16] + 0xff00;
-      //   memory[imm16.reg16] = af.reg.hi;
-
-      //   fprintf(stderr, "ldh\t[%04X],\ta", imm16.reg16);
-      //   fprintf(stderr, "\t\t%04X:\t%02X\n", imm16.reg16, memory[imm16.reg16]);
-      //   cycle_count += 3;
-      //   break;
+      case 0xE0:  ldh_m8_r8(af.reg.hi, "a"); break;
       
 
-      // case 0xE1:
-      //   hl.reg.lo = memory[++sp.reg16];
-      //   hl.reg.hi = memory[++sp.reg16];
-      //   fprintf(stderr, "pop\thl\n");
-      //   cycle_count += 3;
-      //   break;
+      case 0xE1:  pop_r16(&hl, "hl"); break;
       
 
-      // case 0xE2:
-      //   memory[0xff00 + bc.reg.lo] = af.reg.hi;
-      //   fprintf(stderr, "ldh\t[c],\ta");
-      //   fprintf(stderr, "\t\t[c]:\t%02X\n", memory[0xff00 + bc.reg.lo]);
-      //   cycle_count += 2;
-      //   break;
+      case 0xE2:  ld_mc_r8(af.reg.hi, "a"); break;
       
 
-      // case 0xE5:
-      //   memory[sp.reg16--] = hl.reg.hi;
-      //   memory[sp.reg16--] = hl.reg.lo;
-      //   fprintf(stderr, "push\thl\n");
-      //   cycle_count += 4;
-      //   break;
+      case 0xE5:  push_r16(hl, "hl"); break;
       
 
-      // case 0xE6:
-      //   pc.reg16++;
-      //   imm8 = memory[pc.reg16];
-      //   af.reg.hi &= imm8;
-
-      //   fprintf(stderr, "and\ta,\t%02X", imm8);
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 2;
-      //   break;
+      case 0xE6:  and_r8_n8(&(af.reg.hi), "a"); break;
       
 
-      case 0xEA:  ld_m16_r8(&(af.reg.hi), "a"); break;
+      case 0xEA:  ld_m16_r8(af.reg.hi, "a"); break;
       
 
-      // case 0xF0:
-      //   pc.reg16++;
-      //   imm16.reg16 = 0xff00 + memory[pc.reg16];
-      //   af.reg.hi = memory[imm16.reg16];
-
-      //   fprintf(stderr, "ldh\ta,\t[%04X]", imm16.reg16);
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 3;
-      //   break;
+      case 0xF0:  ldh_r8_m8(&(af.reg.hi), "a"); break;
       
 
-      // case 0xF1:
-      //   af.reg.lo = memory[++sp.reg16];
-      //   af.reg.hi = memory[++sp.reg16];
-      //   zf = (af.reg.lo & 0x80) >> 7;
-      //   nf = (af.reg.lo & 0x40) >> 6;
-      //   hf = (af.reg.lo & 0x20) >> 5;
-      //   cf = (af.reg.lo & 0x10) >> 4;
-      //   fprintf(stderr, "pop\taf\t");
-      //   fprintf(stderr, "\t\taf:\t%04X\tznhc:\t%d%d%d%d\n", af.reg16, zf, nf, hf, cf);
-      //   cycle_count += 3;
-      //   break;
+      case 0xF1:
+        pop_r16(&af, "af");
+        zf = (af.reg.lo & 0x80) >> 7;
+        nf = (af.reg.lo & 0x40) >> 6;
+        hf = (af.reg.lo & 0x20) >> 5;
+        cf = (af.reg.lo & 0x10) >> 4;
+        break;
       
 
-      // case 0xF3:
-      //   interrupts_enabled = false;
-      //   fprintf(stderr, "di\n");
-      //   cycle_count += 1;
-      //   break;
+      case 0xF3:  interrupts(false);  break;
       
 
-      // case 0xF5:
-      //   af.reg.lo = (zf << 7) | (nf << 6) | (hf << 5) | (cf << 4);
-      //   memory[sp.reg16--] = af.reg.hi;
-      //   memory[sp.reg16--] = af.reg.lo;
-      //   fprintf(stderr, "push\taf\t");
-      //   fprintf(stderr, "\t\taf:\t%04X\n", af.reg16);
-      //   cycle_count += 4;
-      //   break;
+      case 0xF5:
+        af.reg.lo = (zf << 7) | (nf << 6) | (hf << 5) | (cf << 4);
+        push_r16(af, "af");
+        break;
       
 
-      // case 0xFA:
-      //   imm16.reg.lo = memory[++pc.reg16];
-      //   imm16.reg.hi = memory[++pc.reg16];
-      //   af.reg.hi = memory[imm16.reg16];
-      //   fprintf(stderr, "ld\ta,\t[%04X]", imm16.reg16);
-      //   fprintf(stderr, "\t\ta:\t%02X\n", af.reg.hi);
-      //   cycle_count += 4;
-      //   break;
+      case 0xFA:  ld_r8_m16(&(af.reg.hi), "a"); break;
       
 
-      case 0xFE:  cp_r8_n8(&(af.reg.hi), "a");  break;
+      case 0xFE:  cp_r8_n8(af.reg.hi, "a");  break;
       
 
       default:
