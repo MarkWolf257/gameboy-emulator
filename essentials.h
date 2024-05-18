@@ -160,6 +160,21 @@ static inline void ld_r8_n8(register8_t *r8, const char *name)
   #endif
 }
 
+static inline void jr_cc_n8(uint8_t cc, const char *name)
+{
+  uint8_t n8 = memory[++pc.reg16];
+  if (cc)
+  {
+    pc.reg16 = (int16_t) pc.reg16 + (int8_t) n8;
+    cycle_count += 1;
+  }
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "jr%s\t%d\n", name, (int8_t) n8);
+  #endif
+}
+
 
 // Functions block 1
 static inline void ld_r8_r8(register8_t *r8l, const char *namel, register8_t r8r, const char *namer)
@@ -179,7 +194,7 @@ static inline void ld_mhl_r8(register8_t r8, const char *name)
   cycle_count += 2;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "ld\t[hl],\t%s" name);
+  fprintf(LOG_FILE, "ld\t[hl],\t%s", name);
   fprintf(LOG_FILE, "\t\thl:\t%04X\n", hl.reg16);
   #endif
 }
@@ -199,7 +214,7 @@ static inline void ld_r8_mhl(register8_t *r8, const char *name)
 // Functions block 2
 static inline void add_a_r8(register8_t r8, const char *name, bool carry)
 {
-  af.reg.hi += (r8 + carry ? c : 0);
+  af.reg.hi += (r8 + carry ? cf : 0);
   zf = !(af.reg.hi);
   nf = 0;
   hf = (af.reg.hi & 0xf) < (r8 & 0xf);
@@ -216,7 +231,7 @@ static inline void sub_a_r8(register8_t r8, const char *name, bool carry)
 {
   hf = (af.reg.hi & 0xf) < (r8 & 0xf);
   cf = af.reg.hi < r8;
-  af.reg.hi -= (r8 + carry ? c : 0);
+  af.reg.hi -= (r8 + carry ? cf : 0);
   zf = !(af.reg.hi);
   nf = 0;
   cycle_count += 1;
@@ -248,7 +263,7 @@ static inline void xor_a_r8(register8_t r8, const char *name)
   cycle_count += 1;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "xor\t%s,\t%s", name);
+  fprintf(LOG_FILE, "xor\ta,\t%s", name);
   fprintf(LOG_FILE, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
   #endif
 }
@@ -261,7 +276,7 @@ static inline void or_a_r8(register8_t r8, const char *name)
   cycle_count += 1;
 
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "or\t%s,\t%s", name);
+  fprintf(LOG_FILE, "or\ta,\t%s", name);
   fprintf(LOG_FILE, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
   #endif
 }
@@ -325,12 +340,12 @@ static inline void call_cc_n16(uint8_t cc, const char *name)
   if (cc) {
     memory[sp.reg16--] = pc.reg.hi;
     memory[sp.reg16--] = pc.reg.lo;
-    pc.reg16 = n16.reg16;
+    pc.reg16 = n16.reg16 - 1;
     cycle_count += 3;
   }
   
   #ifdef GENERATE_LOGS
-  fprintf(LOG_FILE, "call%s\t%04X\n", n16.reg16);
+  fprintf(LOG_FILE, "call%s\t%04X\n", name, n16.reg16);
   #endif
 }
 
