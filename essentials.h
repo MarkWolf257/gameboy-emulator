@@ -48,7 +48,8 @@ uint8_t  memory[MEMORY_SIZE];
 register16_t af, bc, de, hl, sp, pc;
 uint8_t zf, nf, hf, cf;
 uint8_t cycle_count = 0;
-bool interrupts_enabled = true;
+bool interrupts_enabled = false;
+FILE *log_file;
 
 
 // Functions Block 0
@@ -118,7 +119,7 @@ static inline void add_hl_r16(register16_t r16, const char *name)
   
   #ifdef GENERATE_LOGS
   fprintf(LOG_FILE, "add\thl,\t%s", name);
-  fprintf(LOG_FILE, "\t\thl:\t%02X\tznhc:\t%d%d%d%d\n", hl.reg16, zf, nf, hf, cf);
+  fprintf(LOG_FILE, "\t\thl:\t%04X\tznhc:\t%d%d%d%d\n", hl.reg16, zf, nf, hf, cf);
   #endif
 }
 
@@ -214,7 +215,7 @@ static inline void ld_r8_mhl(register8_t *r8, const char *name)
 // Functions block 2
 static inline void add_a_r8(register8_t r8, const char *name, bool carry)
 {
-  af.reg.hi += (r8 + carry ? cf : 0);
+  af.reg.hi += (r8 + (carry ? cf : 0));
   zf = !(af.reg.hi);
   nf = 0;
   hf = (af.reg.hi & 0xf) < (r8 & 0xf);
@@ -223,7 +224,7 @@ static inline void add_a_r8(register8_t r8, const char *name, bool carry)
 
   #ifdef GENERATE_LOGS
   fprintf(LOG_FILE, "%s\ta,\t%s", carry ? "adc" : "add", name);
-  fprintf(LOG_FILE, "\t\ta:\t%02X\tznhc:\t%d%d%d%d", af.reg.hi, zf, nf, hf, cf);
+  fprintf(LOG_FILE, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
   #endif
 }
 
@@ -231,14 +232,14 @@ static inline void sub_a_r8(register8_t r8, const char *name, bool carry)
 {
   hf = (af.reg.hi & 0xf) < (r8 & 0xf);
   cf = af.reg.hi < r8;
-  af.reg.hi -= (r8 + carry ? cf : 0);
+  af.reg.hi -= (r8 + (carry ? cf : 0));
   zf = !(af.reg.hi);
   nf = 0;
   cycle_count += 1;
 
   #ifdef GENERATE_LOGS
   fprintf(LOG_FILE, "%s\ta,\t%s", carry ? "sbc" : "sub", name);
-  fprintf(LOG_FILE, "\t\ta:\t%02X\tznhc:\t%d%d%d%d", af.reg.hi, zf, nf, hf, cf);
+  fprintf(LOG_FILE, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
   #endif
 }
 
@@ -302,6 +303,7 @@ static inline void ret_cc(uint8_t cc, const char *name)
   if (cc) {
     pc.reg.lo = memory[++sp.reg16];
     pc.reg.hi = memory[++sp.reg16];
+    --pc.reg16;
     cycle_count += 3;
   }
   cycle_count += 2;
@@ -329,7 +331,7 @@ static inline void jp_cc_n16(uint8_t cc, const char *name)
     pc.reg16 = n16;
   }
 }
-// NEEDS FIXING BOTH CALL AND RST
+
 static inline void call_cc_n16(uint8_t cc, const char *name)
 {
   register16_t n16;
@@ -338,6 +340,7 @@ static inline void call_cc_n16(uint8_t cc, const char *name)
   cycle_count += 3;
 
   if (cc) {
+    ++pc.reg16;
     memory[sp.reg16--] = pc.reg.hi;
     memory[sp.reg16--] = pc.reg.lo;
     pc.reg16 = n16.reg16 - 1;
@@ -351,9 +354,10 @@ static inline void call_cc_n16(uint8_t cc, const char *name)
 
 static inline void rst(uint16_t address)
 {
+  ++pc.reg16;
   memory[sp.reg16--] = pc.reg.hi;
   memory[sp.reg16--] = pc.reg.lo;
-  pc.reg16 = address;
+  pc.reg16 = address - 1;
   cycle_count += 4;
 
   #ifdef GENERATE_LOGS
@@ -386,6 +390,19 @@ static inline void push_r16(register16_t r16, const char *name)
 
 
 // Functions CB prefix
+static inline void swap(register8_t *r8, const char *name)
+{
+  *r8 = *r8 << 4 | *r8 >> 4;
+  zf = !(*r8);
+  nf = 0; hf = 0; cf = 0;
+  cycle_count += 2;
+
+  #ifdef GENERATE_LOGS
+  fprintf(LOG_FILE, "swap\t%s\t", name);
+  fprintf(LOG_FILE, "\t\t%s:\t%04X\n", name, *r8);
+  #endif
+}
+
 static inline void res_bitn_r8(uint8_t n, register8_t *r8, const char *name)
 {
   *r8 &= ~(1 << n);

@@ -1,76 +1,8 @@
 #define GENERATE_LOGS true
 #define LOG_FILE stderr
+// #define LOG_FILE_NAME "log0.txt"
 
 #include "essentials.h"
-
-
-
-// static inline void ld_m16_r8(register8_t r8, const char *name)
-// {
-//   register16_t m16;
-//   m16.reg.lo = memory[++pc.reg16];
-//   m16.reg.hi = memory[++pc.reg16];
-//   memory[m16.reg16] = r8;
-//   cycle_count += 4;
-
-//   #ifdef GENERATE_LOGS
-//   fprintf(LOG_FILE, "ld\t[%04X],\t%s", m16.reg16, name);
-//   fprintf(LOG_FILE, "\t\t[%04X]:\t%02X\n", m16.reg16, memory[m16.reg16]);
-//   #endif
-// }
-
-
-
-// static inline void ld_r8_m16(register8_t *r8, const char *name)
-// {
-//   register16_t m16;
-//   m16.reg.lo = memory[++pc.reg16];
-//   m16.reg.hi = memory[++pc.reg16];
-//   *r8 = memory[m16.reg16];
-//   cycle_count += 4;
-
-//   #ifdef GENERATE_LOGS
-//   fprintf(LOG_FILE, "ld\t%s,\t[%04X]", name, m16.reg16);
-//   fprintf(LOG_FILE, "\t\t%s:\t%02X\n", name, *r8);
-//   #endif
-// }
-
-// static inline void ldh_r8_m8(register8_t *r8, const char *name)
-// {
-//   register16_t m16;
-//   m16.reg16 = 0xff00 + memory[++pc.reg16];
-//   *r8 = memory[m16.reg16];
-//   cycle_count += 3;
-
-//   #ifdef GENERATE_LOGS
-//   fprintf(LOG_FILE, "ldh\t%s,\t[%04X]", name, m16.reg16);
-//   fprintf(LOG_FILE, "\t\t%s:\t%02X\n", name, *r8);
-//   #endif
-// }
-
-// static inline void ldh_m8_r8(register8_t r8, const char *name)
-// {
-//   register16_t m16;
-//   m16.reg16 = memory[++pc.reg16] | 0xff00;
-//   memory[m16.reg16] = r8;
-//   cycle_count += 3;
-
-//   #ifdef GENERATE_LOGS
-//   fprintf(LOG_FILE, "ldh\t[%04X],\t%s", m16.reg16, name);
-//   fprintf(LOG_FILE, "\t\t[%04X]:\t%02X\n", m16.reg16, memory[m16.reg16]);
-//   #endif
-// }
-
-// static inline void ld_mc_r8(register8_t r8, const char *name)
-// {
-//   memory[bc.reg.lo + 0xff00] = r8;
-//   cycle_count += 2;
-
-//   #ifdef GENERATE_LOGS
-//   fprintf(LOG_FILE, "ld\t[c],\t%s", name);
-//   fprintf(LOG_FILE, "\t\tc:\t%02X\t[c]:\t%02X\n", bc.reg.lo, memory[bc.reg.lo + 0xff00]);
-//   #endif
-// }
 
 
 void ppu()
@@ -78,14 +10,30 @@ void ppu()
   if (cycle_count >= CYCLES_PER_LINE) {
     memory[0xff44] = (memory[0xff44] + 1) % VERTICAL_LINES;
     cycle_count %= CYCLES_PER_LINE;
+
+    if (memory[0xff44] == 0x90)
+      memory[0xff0f] |= 0x01;
+
+    // Dump vram into a log file 
+    // FILE *fptr = fopen("vram.txt", "a");
+    // for (int i = 0x8000; i < 0x9800; i++) {
+    //   fprintf(fptr, "%02X ", memory[i]);
+    // }
+    // fprintf(fptr, "\n");
+    // fclose(fptr);
   }
 }
 
 
 int main()
 {
+  #ifdef LOG_FILE_NAME
+  log_file = fopen(LOG_FILE_NAME, "w");
+  #endif
+
+
   // Load ROM into memory
-  FILE *fptr = fopen("rom.gb", "rb");
+  FILE *fptr = fopen("rom0.gb", "rb");
   if (fptr == NULL)
   {
     printf("Error! opening file");
@@ -102,21 +50,66 @@ int main()
 
 
   // Initialize registers
-  af.reg16 = 0x0100;
+  af.reg16 = memory[0x014D] ? 0x01B0 : 0x0180;
+  bc.reg16 = 0x0013;
+  de.reg16 = 0x00D8;
+  hl.reg16 = 0x014D;
   pc.reg16 = 0x0100;
   sp.reg16 = 0xfffe;
-  fprintf(stderr, "Entry Point:\t%04X\n", pc.reg16);
+
+
+  fprintf(LOG_FILE, "Entry Point:\t%04X\n", pc.reg16);
 
   uint8_t opcode, n8;
   register16_t n16;
   char name[8];
+  bool can_interrupt = false;
 
 
   do {
-    ppu();
-    fprintf(stderr, "%04X:\t", pc.reg16);
+    // Run PPU in parallel if enabled
+    if (memory[0xff40] & 0x80)
+      ppu();
+
+
+    // Handle Interrupts
+    if (!interrupts_enabled)
+      can_interrupt = false;
+
+    if (can_interrupt)
+    {
+      for (int i = 0; i < 5; i++)
+      {
+        if ((memory[0xffff] & (1 << i)) && (memory[0xff0f] & (1 << i)))
+        {
+          #ifdef GENERATE_LOGS
+          fprintf(LOG_FILE, "\nINTERRUPT\t\t\t\tie:\t%02X\tif:\t%02X\n", memory[0xffff], memory[0xff0f]);
+          #endif
+
+          memory[sp.reg16--] = pc.reg.hi;
+          memory[sp.reg16--] = pc.reg.lo;
+          pc.reg16 = 0x0040 + i * 8;
+          cycle_count += 5;
+
+          interrupts_enabled = false;
+          memory[0xff0f] &= ~(1 << i);
+        }
+      }
+    }
+
+    if (interrupts_enabled)
+      can_interrupt = true;
+
+
+
+    // Execute Instructions
+    #ifdef GENERATE_LOGS
+    fprintf(LOG_FILE, "%04X:\t", pc.reg16);
+    #endif
+
     opcode = memory[pc.reg16];
 
+    
     switch (opcode)
     {
       case 0x00:  //nop
@@ -136,10 +129,10 @@ int main()
       // case 0x02:  ld_mr16_a(&bc, "bc"); break;
       case 0x12:  ld_mr16_a(&de, "de"); break;
       case 0x22:  ld_mr16_a(&hl, "hl+");  hl.reg16++; break;
-      // case 0x32:  ld_mr16_a(&hl, "hl-");  hl.reg16--; break;
+      case 0x32:  ld_mr16_a(&hl, "hl-");  hl.reg16--; break;
 
       // case 0x0A:  ld_a_mr16(bc, "bc"); break;
-      // case 0x1A:  ld_a_mr16(de, "de"); break;
+      case 0x1A:  ld_a_mr16(de, "de"); break;
       case 0x2A:  ld_a_mr16(hl, "hl+");  hl.reg16++; break;
       // case 0x3A:  ld_a_mr16(hl, "hl-");  hl.reg16--; break;
 
@@ -156,31 +149,43 @@ int main()
       // case 0x3B:  dec_r16(&sp, "sp"); break;
 
       case 0x09:  add_hl_r16(bc, "bc"); break;
-      // case 0x19:  add_hl_r16(de, "de"); break;
+      case 0x19:  add_hl_r16(de, "de"); break;
       // case 0x29:  add_hl_r16(hl, "hl"); break;
       // case 0x39:  add_hl_r16(sp, "sp"); break;
 
       // case 0x04:  inc_r8(&(bc.reg.hi), "b");  break;
       case 0x0C:  inc_r8(&(bc.reg.lo), "c");  break;
       // case 0x14:  inc_r8(&(de.reg.hi), "d");  break;
-      // case 0x1C:  inc_r8(&(de.reg.lo), "e");  break;
+      case 0x1C:  inc_r8(&(de.reg.lo), "e");  break;
       // case 0x24:  inc_r8(&(hl.reg.hi), "h");  break;
-      // case 0x2C:  inc_r8(&(hl.reg.lo), "l");  break;
-      // case 0x34:  fprintf("Unimplemented Opcode 0x34"); exit(1);
-      // case 0x3C:  inc_r8(&(af.reg.hi), "a");  break;
+      case 0x2C:  inc_r8(&(hl.reg.lo), "l");  break;
+      case 0x34:  // inc [hl]
+        memory[hl.reg16]++;
+        cycle_count += 3;
+
+        #ifdef GENERATE_LOGS
+        fprintf(LOG_FILE, "inc\t[hl]\t");
+        fprintf(LOG_FILE, "\t\thl:\t%04X\t[hl]:\t%02X\n", hl.reg16, memory[hl.reg16]);
+        #endif
+
+        break;
+      case 0x3C:  inc_r8(&(af.reg.hi), "a");  break;
 
       case 0x05:  dec_r8(&(bc.reg.hi), "b");  break;
-      // case 0x0D:  dec_r8(&(bc.reg.lo), "c");  break;
+      case 0x0D:  dec_r8(&(bc.reg.lo), "c");  break;
       case 0x15:  dec_r8(&(de.reg.hi), "d");  break;
       case 0x1D:  dec_r8(&(de.reg.lo), "e");  break;
       // case 0x25:  dec_r8(&(hl.reg.hi), "h");  break;
       // case 0x2D:  dec_r8(&(hl.reg.lo), "l");  break;
-      // case 0x35:  fprintf("Unimplemented Opcode 0x35"); exit(1);
+      case 0x35:
+        dec_r8(&memory[hl.reg16], "[hl]");
+        cycle_count += 2;
+        break;
       case 0x3D:  dec_r8(&(af.reg.hi), "a");  break;
 
       case 0x06:  ld_r8_n8(&(bc.reg.hi), "b");  break;
       case 0x0E:  ld_r8_n8(&(bc.reg.lo), "c");  break;
-      // case 0x16:  ld_r8_n8(&(de.reg.hi), "d");  break;
+      case 0x16:  ld_r8_n8(&(de.reg.hi), "d");  break;
       // case 0x1E:  ld_r8_n8(&(de.reg.lo), "e");  break;
       case 0x26:  ld_r8_n8(&(hl.reg.hi), "h");  break;
       // case 0x2E:  ld_r8_n8(&(hl.reg.lo), "l");  break;
@@ -189,6 +194,17 @@ int main()
         cycle_count += 1;
         break;
       case 0x3E:  ld_r8_n8(&(af.reg.hi), "a");  break;
+
+      case 0x2F:  // ccf
+        nf = 0; hf = 0; cf = !cf;
+        cycle_count += 1;
+
+        #ifdef GENERATE_LOGS
+        fprintf(LOG_FILE, "ccf\t\t");
+        fprintf(LOG_FILE, "\t\tznhc:\t%d%d%d%d\n", zf, nf, hf, cf);
+        #endif
+
+        break;
 
       case 0x18:  jr_cc_n8(true, "");  break;
       case 0x20:  jr_cc_n8(!zf, "nz"); break;
@@ -224,7 +240,7 @@ int main()
       // case 0x53:  ld_r8_r8(&(de.reg.hi), "d", de.reg.lo, "e");  break;
       // case 0x54:  ld_r8_r8(&(de.reg.hi), "d", hl.reg.hi, "h");  break;
       // case 0x55:  ld_r8_r8(&(de.reg.hi), "d", hl.reg.lo, "l");  break;
-      // case 0x56:  ld_r8_mhl(&(de.reg.hi), "d");  break;
+      case 0x56:  ld_r8_mhl(&(de.reg.hi), "d");  break;
       case 0x57:  ld_r8_r8(&(de.reg.hi), "d", af.reg.hi, "a");  break;
 
       // case 0x58:  ld_r8_r8(&(de.reg.lo), "e", bc.reg.hi, "b");  break;
@@ -233,8 +249,8 @@ int main()
       // case 0x5B:  ld_r8_r8(&(de.reg.lo), "e", de.reg.lo, "e");  break;
       // case 0x5C:  ld_r8_r8(&(de.reg.lo), "e", hl.reg.hi, "h");  break;
       // case 0x5D:  ld_r8_r8(&(de.reg.lo), "e", hl.reg.lo, "l");  break;
-      // case 0x5E:  ld_r8_mhl(&(de.reg.lo), "e");  break;
-      // case 0x5F:  ld_r8_r8(&(de.reg.lo), "e", af.reg.hi, "a");  break;
+      case 0x5E:  ld_r8_mhl(&(de.reg.lo), "e");  break;
+      case 0x5F:  ld_r8_r8(&(de.reg.lo), "e", af.reg.hi, "a");  break;
 
       // case 0x60:  ld_r8_r8(&(hl.reg.hi), "h", bc.reg.hi, "b");  break;
       // case 0x61:  ld_r8_r8(&(hl.reg.hi), "h", bc.reg.lo, "c");  break;
@@ -266,7 +282,7 @@ int main()
       case 0x79:  ld_r8_r8(&(af.reg.hi), "a", bc.reg.lo, "c");  break;
       case 0x7A:  ld_r8_r8(&(af.reg.hi), "a", de.reg.hi, "d");  break;
       // case 0x7B:  ld_r8_r8(&(af.reg.hi), "a", de.reg.lo, "e");  break;
-      // case 0x7C:  ld_r8_r8(&(af.reg.hi), "a", hl.reg.hi, "h");  break;
+      case 0x7C:  ld_r8_r8(&(af.reg.hi), "a", hl.reg.hi, "h");  break;
       // case 0x7D:  ld_r8_r8(&(af.reg.hi), "a", hl.reg.lo, "l");  break;
       case 0x7E:  ld_r8_mhl(&(af.reg.hi), "a");  break;
       // case 0x7F:  ld_r8_r8(&(af.reg.hi), "a", af.reg.hi, "a");  break;
@@ -285,7 +301,7 @@ int main()
       //   add_a_r8(memory[hl.reg16], "[hl]", false);
       //   cycle_count += 1;
       //   break;
-      // case 0x87:  add_a_r8(af.reg.hi, "a", false); break;
+      case 0x87:  add_a_r8(af.reg.hi, "a", false); break;
 
       // case 0x88:  add_a_r8(bc.reg.hi, "b", true); break;
       // case 0x89:  add_a_r8(bc.reg.lo, "c", true); break;
@@ -324,7 +340,7 @@ int main()
       // case 0x9F:  sub_a_r8(af.reg.hi, "a", true); break;
 
       // case 0xA0:  and_a_r8(bc.reg.hi, "b"); break;
-      // case 0xA1:  and_a_r8(bc.reg.lo, "c"); break;
+      case 0xA1:  and_a_r8(bc.reg.lo, "c"); break;
       // case 0xA2:  and_a_r8(de.reg.hi, "d"); break;
       // case 0xA3:  and_a_r8(de.reg.lo, "e"); break;
       // case 0xA4:  and_a_r8(hl.reg.hi, "h"); break;
@@ -336,7 +352,7 @@ int main()
       case 0xA7:  and_a_r8(af.reg.hi, "a"); break;
 
       // case 0xA8:  xor_a_r8(bc.reg.hi, "b"); break;
-      // case 0xA9:  xor_a_r8(bc.reg.lo, "c"); break;
+      case 0xA9:  xor_a_r8(bc.reg.lo, "c"); break;
       // case 0xAA:  xor_a_r8(de.reg.hi, "d"); break;
       // case 0xAB:  xor_a_r8(de.reg.lo, "e"); break;
       // case 0xAC:  xor_a_r8(hl.reg.hi, "h"); break;
@@ -420,30 +436,35 @@ int main()
         cp_a_r8(memory[pc.reg16], name);
         cycle_count += 1;
         break;
-      
-      // case 0xC0:  ret_cc(!zf, "nz");  break;
-      // case 0xC8:  ret_cc(zf, "z");  break;
+         
+      case 0xC0:  ret_cc(!zf, "nz");  break;
+      case 0xC8:  ret_cc(zf, "z");  break;
       // case 0xD0:  ret_cc(!cf, "nc");  break;
       // case 0xD8:  ret_cc(cf, "c");  break;
       case 0xC9:  // ret
         ret_cc(true, "");
         cycle_count -= 1;
         break;
-      // case 0xD9:  // reti
-      //   interrupts_enabled = true;
-      //   ret_cc(true, "i");
-      //   cycle_count -= 1;
-      //   break;
+      case 0xD9:  // reti
+        interrupts_enabled = true;
+        ret_cc(true, "i");
+        cycle_count -= 1;
+        break;
       
       // case 0xC2:  jp_cc_n16(!zf, "nz"); break;
-      // case 0xCA:  jp_cc_n16(zf, "z"); break;
+      case 0xCA:  jp_cc_n16(zf, "z"); break;
       // case 0xD2:  jp_cc_n16(!cf, "nc"); break;
       // case 0xDA:  jp_cc_n16(cf, "c"); break;
       case 0xC3:  jp_cc_n16(true, "");  break;
-      // case 0xE9:  // jp hl
-      //   pc.reg16 = hl.reg16;
-      //   cycle_count += 1;
-      //   continue;
+      case 0xE9:  // jp hl
+        pc.reg16 = hl.reg16 - 1;
+        cycle_count += 1;
+
+        #ifdef GENERATE_LOGS
+        fprintf(LOG_FILE, "jp\thl\n");
+        #endif
+
+        break;
       
       // case 0xC4:  call_cc_n16(!zf, "nz"); break;
       // case 0xCC:  call_cc_n16(zf, "z"); break;
@@ -456,20 +477,20 @@ int main()
       // case 0xD7:  rst(0x10);  break;
       // case 0xDF:  rst(0x18);  break;
       // case 0xE7:  rst(0x20);  break;
-      // case 0xEF:  rst(0x28);  break;
+      case 0xEF:  rst(0x28);  break;
       // case 0xF7:  rst(0x30);  break;
       // case 0xFF:  rst(0x38);  break;
 
-      // case 0xC1:  pop_r16(&bc, "bc"); break;
+      case 0xC1:  pop_r16(&bc, "bc"); break;
       case 0xD1:  pop_r16(&de, "de"); break;
-      // case 0xE1:  pop_r16(&hl, "hl"); break;
-      // case 0xF1:
-      //   pop_r16(&af, "af");
-      //   zf = (af.reg.lo & 0x80) >> 7;
-      //   nf = (af.reg.lo & 0x40) >> 6;
-      //   hf = (af.reg.lo & 0x20) >> 5;
-      //   cf = (af.reg.lo & 0x10) >> 4;
-      //   break;
+      case 0xE1:  pop_r16(&hl, "hl"); break;
+      case 0xF1:
+        pop_r16(&af, "af");
+        zf = (af.reg.lo & 0x80) >> 7;
+        nf = (af.reg.lo & 0x40) >> 6;
+        hf = (af.reg.lo & 0x20) >> 5;
+        cf = (af.reg.lo & 0x10) >> 4;
+        break;
       
       case 0xC5:  push_r16(bc, "bc"); break;
       case 0xD5:  push_r16(de, "de"); break;
@@ -544,25 +565,36 @@ int main()
 
         break;
       
+      case 0xFB:  // ei
+        interrupts_enabled = true;
+        cycle_count += 1;
+
+        #ifdef GENERATE_LOGS
+        fprintf(LOG_FILE, "ei\n");
+        #endif
+
+        break;
+      
       
       
       case 0xCB:
         pc.reg16++;
         opcode = memory[pc.reg16];
         switch (opcode) {
-          case 0x87:  res_bitn_r8(1, &(af.reg.hi), "a");  break;
+          case 0x37:  swap(&(af.reg.hi), "a");  break;
+          case 0x87:  res_bitn_r8(0, &(af.reg.hi), "a");  break;
           
           case 0xCF:  set_bitn_r8(1, &(af.reg.hi), "a");  break;
 
           default:
-            fprintf(stderr, "Unknown CB prefix instruction");
+            fprintf(LOG_FILE, "Unknown CB prefix instruction");
             exit(1);
         }
         break;
       
 
       default:
-        fprintf(stderr, "Unimplemented opcode\n");
+        fprintf(LOG_FILE, "Unimplemented opcode\n");
         exit(1);
     }
 

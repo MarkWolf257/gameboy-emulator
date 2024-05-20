@@ -1,7 +1,7 @@
-rom.gb
+*.gb
+log*.txt
 output.txt
 emulator.exe
 output.bmp
 bitmap.exe
 tile.exe
-log.txt
