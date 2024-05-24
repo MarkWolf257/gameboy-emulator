@@ -1,4 +1,3 @@
-#define GENERATE_LOGS true
 // #define LOG_FILE stderr
 #define LOG_FILE log_file
 #define LOG_FILE_NAME "log0.txt"
@@ -20,42 +19,52 @@
 static inline void ppu();
 
 
+// Initialize registers
+register16_t af = { .reg16 = 0x01B0 };
+register16_t bc = { .reg16 = 0x0013 };
+register16_t de = { .reg16 = 0x00D8 };
+register16_t hl = { .reg16 = 0x014D };
+register16_t pc = { .reg16 = 0x0100 };
+register16_t sp = { .reg16 = 0xfffe };
+uint8_t zf = 1, nf = 0, hf = 1, cf = 1;
+uint8_t ime0 = 0, ime = 0, cycle_count = 0;
+
+uint8_t *memory;
+
+#ifdef LOG_FILE_NAME
+FILE *LOG_FILE;
+#endif // LOG_FILE_NAME
+
+
 int main()
 {
 #ifdef LOG_FILE_NAME
-  FILE *LOG_FILE = fopen(LOG_FILE_NAME, "w");
+  LOG_FILE = fopen(LOG_FILE_NAME, "w");
   if (LOG_FILE == NULL) {
     printf("Error! Writing to log file");
     exit(1);
   }
-#endif
+#endif // LOG_FILE_NAME
 
 
   // Load ROM into memory
-  uint8_t *memory = malloc(GB_MEMORY_SIZE * sizeof(*memory));
+  memory = malloc(GB_MEMORY_SIZE * sizeof(*memory));
   FILE *fptr = fopen("../roms/rom0.gb", "rb");
   if (fptr == NULL) {
     printf("Error! opening file");
-    return 1;
+    exit(1);
   }
 
-  if (fread(memory, 1, BANK_SIZE * 2, fptr) != BANK_SIZE * 2)
+  if (fread(memory, 1, GB_BANK_SIZE * 2, fptr) != GB_BANK_SIZE * 2)
   {
     printf("Error! reading file");
-    return 1;
+    exit(1);
   }
 
   fclose(fptr);
 
 
-  // Initialize registers
-  register16_t af = { .reg16 = 0x01B0 };
-  register16_t bc = { .reg16 = 0x0013 };
-  register16_t de = { .reg16 = 0x00D8 };
-  register16_t hl = { .reg16 = 0x014D };
-  register16_t pc = { .reg16 = 0x0100 };
-  register16_t sp = { .reg16 = 0xfffe };
-  uint8_t zf, nf, hf, cf, ime0 = 0, ime = 0, cycle_count = 0;
+
 
   af.reg16 = memory[0x014D] ? 0x01B0 : 0x0180;
 
@@ -81,9 +90,9 @@ int main()
       {
         if ((memory[0xffff] & (1 << i)) && (memory[0xff0f] & (1 << i)))
         {
-          #ifdef GENERATE_LOGS
+          #ifdef LOG_FILE
           fprintf(LOG_FILE, "\nINTERRUPT\t\t\t\tie:\t%02X\tif:\t%02X\n", memory[0xffff], memory[0xff0f]);
-          #endif
+          #endif // LOG_FILE
 
           memory[sp.reg16--] = pc.reg.hi;
           memory[sp.reg16--] = pc.reg.lo;
@@ -102,22 +111,23 @@ int main()
 
 
     // Execute Instructions
-    #ifdef GENERATE_LOGS
+    #ifdef LOG_FILE
     fprintf(LOG_FILE, "%04X:\t", pc.reg16);
-    #endif // GENERATE_LOGS
+    #endif // LOG_FILE
 
-    opcode = memory[pc.reg16];
+    opcode = get_memory(pc.reg16);
 
     
     switch (opcode)
     {
+      //
+      // BLOCK 0
+      //
       case 0x00:  //nop
         cycle_count += 1;
-
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "nop\n");
-        #endif
-
+#endif // LOG_FILE
         break;
 
       case 0x01:  ld_r16_n16(&bc, "bc");  break;
@@ -125,10 +135,10 @@ int main()
       case 0x21:  ld_r16_n16(&hl, "hl");  break;
       case 0x31:  ld_r16_n16(&sp, "sp");  break;
 
-      case 0x02:  ld_mr16_a(&bc, "bc"); break;
-      case 0x12:  ld_mr16_a(&de, "de"); break;
-      case 0x22:  ld_mr16_a(&hl, "hl+");  hl.reg16++; break;
-      case 0x32:  ld_mr16_a(&hl, "hl-");  hl.reg16--; break;
+      case 0x02:  ld_mr16_a(bc, "bc"); break;
+      case 0x12:  ld_mr16_a(de, "de"); break;
+      case 0x22:  ld_mr16_a(hl, "hl+");  hl.reg16++; break;
+      case 0x32:  ld_mr16_a(hl, "hl-");  hl.reg16--; break;
 
       case 0x0A:  ld_a_mr16(bc, "bc"); break;
       case 0x1A:  ld_a_mr16(de, "de"); break;
@@ -159,14 +169,8 @@ int main()
       case 0x24:  inc_r8(&(hl.reg.hi), "h");  break;
       case 0x2C:  inc_r8(&(hl.reg.lo), "l");  break;
       case 0x34:  // inc [hl]
-        memory[hl.reg16]++;
-        cycle_count += 3;
-
-        #ifdef GENERATE_LOGS
-        fprintf(LOG_FILE, "inc\t[hl]\t");
-        fprintf(LOG_FILE, "\t\thl:\t%04X\t[hl]:\t%02X\n", hl.reg16, memory[hl.reg16]);
-        #endif
-
+        inc_r8(get_setter_memory(hl.reg16), "hl");
+        cycle_count += 2;
         break;
       case 0x3C:  inc_r8(&(af.reg.hi), "a");  break;
 
@@ -176,8 +180,8 @@ int main()
       case 0x1D:  dec_r8(&(de.reg.lo), "e");  break;
       case 0x25:  dec_r8(&(hl.reg.hi), "h");  break;
       case 0x2D:  dec_r8(&(hl.reg.lo), "l");  break;
-      case 0x35:
-        dec_r8(&memory[hl.reg16], "[hl]");
+      case 0x35:  // dec [hl]
+        dec_r8(get_setter_memory(hl.reg16), "hl");
         cycle_count += 2;
         break;
       case 0x3D:  dec_r8(&(af.reg.hi), "a");  break;
@@ -188,9 +192,13 @@ int main()
       case 0x1E:  ld_r8_n8(&(de.reg.lo), "e");  break;
       case 0x26:  ld_r8_n8(&(hl.reg.hi), "h");  break;
       case 0x2E:  ld_r8_n8(&(hl.reg.lo), "l");  break;
-      case 0x36: 
-        ld_r8_n8(&memory[hl.reg16], "[hl]"); 
-        cycle_count += 1;
+      case 0x36:  // ld [hl], n8
+        set_memory(hl.reg16, get_memory(++pc.reg16));
+        cycle_count += 3;
+#ifdef LOG_FILE
+        fprintf(LOG_FILE, "ld\t[hl]\t%02X\t", get_memory(hl.reg16));
+        fprintf(LOG_FILE, "\t\thl:\t%04X\n", hl.reg16);
+#endif // LOG_FILE
         break;
       case 0x3E:  ld_r8_n8(&(af.reg.hi), "a");  break;
 
@@ -198,26 +206,22 @@ int main()
         af.reg.hi = ~af.reg.hi;
         nf = 1; hf = 1;
         cycle_count += 1;
-
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "cpl\t\t");
         fprintf(LOG_FILE, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", af.reg.hi, zf, nf, hf, cf);
-        #endif
-
+#endif // LOG_FILE
         break;
 
       // case 0x3F:  // ccf
       //   nf = 0; hf = 0; cf = !cf;
       //   cycle_count += 1;
-
-      //   #ifdef GENERATE_LOGS
+      //   #ifdef LOG_FILE
       //   fprintf(LOG_FILE, "ccf\t\t");
       //   fprintf(LOG_FILE, "\t\tznhc:\t%d%d%d%d\n", zf, nf, hf, cf);
       //   #endif
-
       //   break;
 
-      case 0x18:  jr_cc_n8(true, "");  break;
+      case 0x18:  jr_cc_n8(1, "");  break;
       case 0x20:  jr_cc_n8(!zf, "nz"); break;
       case 0x28:  jr_cc_n8(zf, "z"); break;
       // case 0x30:  jr_cc_n8(!cf, "nc"); break;
@@ -227,6 +231,9 @@ int main()
       
 
 
+      //
+      // BLOCK 1
+      //
       case 0x40:  ld_r8_r8(&(bc.reg.hi), "b", bc.reg.hi, "b");  break;
       case 0x41:  ld_r8_r8(&(bc.reg.hi), "b", bc.reg.lo, "c");  break;
       case 0x42:  ld_r8_r8(&(bc.reg.hi), "b", de.reg.hi, "d");  break;
@@ -302,53 +309,56 @@ int main()
 
 
 
-      // case 0x80:  add_a_r8(bc.reg.hi, "b", false); break;
-      // case 0x81:  add_a_r8(bc.reg.lo, "c", false); break;
-      // case 0x82:  add_a_r8(de.reg.hi, "d", false); break;
-      // case 0x83:  add_a_r8(de.reg.lo, "e", false); break;
-      // case 0x84:  add_a_r8(hl.reg.hi, "h", false); break;
-      case 0x85:  add_a_r8(hl.reg.lo, "l", false); break;
+      //
+      // BLOCK 2
+      //
+      // case 0x80:  add_a_r8(bc.reg.hi, "b", 0); break;
+      // case 0x81:  add_a_r8(bc.reg.lo, "c", 0); break;
+      // case 0x82:  add_a_r8(de.reg.hi, "d", 0); break;
+      // case 0x83:  add_a_r8(de.reg.lo, "e", 0); break;
+      // case 0x84:  add_a_r8(hl.reg.hi, "h", 0); break;
+      case 0x85:  add_a_r8(hl.reg.lo, "l", 0); break;
       // case 0x86:
-      //   add_a_r8(memory[hl.reg16], "[hl]", false);
+      //   add_a_r8(get_memory(hl.reg16), "[hl]", 0);
       //   cycle_count += 1;
       //   break;
-      case 0x87:  add_a_r8(af.reg.hi, "a", false); break;
+      case 0x87:  add_a_r8(af.reg.hi, "a", 0); break;
 
-      // case 0x88:  add_a_r8(bc.reg.hi, "b", true); break;
-      // case 0x89:  add_a_r8(bc.reg.lo, "c", true); break;
-      // case 0x8A:  add_a_r8(de.reg.hi, "d", true); break;
-      // case 0x8B:  add_a_r8(de.reg.lo, "e", true); break;
-      // case 0x8C:  add_a_r8(hl.reg.hi, "h", true); break;
-      // case 0x8D:  add_a_r8(hl.reg.lo, "l", true); break;
+      // case 0x88:  add_a_r8(bc.reg.hi, "b", 1); break;
+      // case 0x89:  add_a_r8(bc.reg.lo, "c", 1); break;
+      // case 0x8A:  add_a_r8(de.reg.hi, "d", 1); break;
+      // case 0x8B:  add_a_r8(de.reg.lo, "e", 1); break;
+      // case 0x8C:  add_a_r8(hl.reg.hi, "h", 1); break;
+      // case 0x8D:  add_a_r8(hl.reg.lo, "l", 1); break;
       // case 0x8E:
-      //   add_a_r8(memory[hl.reg16], "[hl]", true);
+      //   add_a_r8(get_memory(hl.reg16), "[hl]", 1);
       //   cycle_count += 1;
       //   break;
-      // case 0x8F:  add_a_r8(af.reg.hi, "a", true); break;
+      // case 0x8F:  add_a_r8(af.reg.hi, "a", 1); break;
 
-      // case 0x90:  sub_a_r8(bc.reg.hi, "b", false); break;
-      // case 0x91:  sub_a_r8(bc.reg.lo, "c", false); break;
-      // case 0x92:  sub_a_r8(de.reg.hi, "d", false); break;
-      // case 0x93:  sub_a_r8(de.reg.lo, "e", false); break;
-      // case 0x94:  sub_a_r8(hl.reg.hi, "h", false); break;
-      // case 0x95:  sub_a_r8(hl.reg.lo, "l", false); break;
+      // case 0x90:  sub_a_r8(bc.reg.hi, "b", 0); break;
+      // case 0x91:  sub_a_r8(bc.reg.lo, "c", 0); break;
+      // case 0x92:  sub_a_r8(de.reg.hi, "d", 0); break;
+      // case 0x93:  sub_a_r8(de.reg.lo, "e", 0); break;
+      // case 0x94:  sub_a_r8(hl.reg.hi, "h", 0); break;
+      // case 0x95:  sub_a_r8(hl.reg.lo, "l", 0); break;
       // case 0x96:
-      //   sub_a_r8(memory[hl.reg16], "[hl]", false);
+      //   sub_a_r8(get_memory(hl.reg16), "[hl]", 0);
       //   cycle_count += 1;
       //   break;
-      // case 0x97:  sub_a_r8(af.reg.hi, "a", false); break;
+      // case 0x97:  sub_a_r8(af.reg.hi, "a", 0); break;
 
-      // case 0x98:  sub_a_r8(bc.reg.hi, "b", true); break;
-      // case 0x99:  sub_a_r8(bc.reg.lo, "c", true); break;
-      // case 0x9A:  sub_a_r8(de.reg.hi, "d", true); break;
-      // case 0x9B:  sub_a_r8(de.reg.lo, "e", true); break;
-      // case 0x9C:  sub_a_r8(hl.reg.hi, "h", true); break;
-      // case 0x9D:  sub_a_r8(hl.reg.lo, "l", true); break;
+      // case 0x98:  sub_a_r8(bc.reg.hi, "b", 1); break;
+      // case 0x99:  sub_a_r8(bc.reg.lo, "c", 1); break;
+      // case 0x9A:  sub_a_r8(de.reg.hi, "d", 1); break;
+      // case 0x9B:  sub_a_r8(de.reg.lo, "e", 1); break;
+      // case 0x9C:  sub_a_r8(hl.reg.hi, "h", 1); break;
+      // case 0x9D:  sub_a_r8(hl.reg.lo, "l", 1); break;
       // case 0x9E:
-      //   sub_a_r8(memory[hl.reg16], "[hl]", true);
+      //   sub_a_r8(get_memory(hl.reg16), "[hl]", 1);
       //   cycle_count += 1;
       //   break;
-      // case 0x9F:  sub_a_r8(af.reg.hi, "a", true); break;
+      // case 0x9F:  sub_a_r8(af.reg.hi, "a", 1); break;
 
       // case 0xA0:  and_a_r8(bc.reg.hi, "b"); break;
       case 0xA1:  and_a_r8(bc.reg.lo, "c"); break;
@@ -357,7 +367,7 @@ int main()
       // case 0xA4:  and_a_r8(hl.reg.hi, "h"); break;
       // case 0xA5:  and_a_r8(hl.reg.lo, "l"); break;
       // case 0xA6:
-      //   and_a_r8(memory[hl.reg16], "[hl]");
+      //   and_a_r8(get_memory(hl.reg16), "[hl]");
       //   cycle_count += 1;
       //   break;
       case 0xA7:  and_a_r8(af.reg.hi, "a"); break;
@@ -369,7 +379,7 @@ int main()
       // case 0xAC:  xor_a_r8(hl.reg.hi, "h"); break;
       // case 0xAD:  xor_a_r8(hl.reg.lo, "l"); break;
       // case 0xAE:
-      //   xor_a_r8(memory[hl.reg16], "[hl]");
+      //   xor_a_r8(get_memory(hl.reg16), "[hl]");
       //   cycle_count += 1;
       //   break;
       case 0xAF:  xor_a_r8(af.reg.hi, "a"); break;
@@ -381,7 +391,7 @@ int main()
       // case 0xB4:  or_a_r8(hl.reg.hi, "h"); break;
       // case 0xB5:  or_a_r8(hl.reg.lo, "l"); break;
       // case 0xB6:
-      //   or_a_r8(memory[hl.reg16], "[hl]");
+      //   or_a_r8(get_memory(hl.reg16), "[hl]");
       //   cycle_count += 1;
       //   break;
       // case 0xB7:  or_a_r8(af.reg.hi, "a"); break;
@@ -393,51 +403,54 @@ int main()
       // case 0xBC:  cp_a_r8(hl.reg.hi, "h"); break;
       // case 0xBD:  cp_a_r8(hl.reg.lo, "l"); break;
       // case 0xBE:
-      //   cp_a_r8(memory[hl.reg16], "[hl]");
+      //   cp_a_r8(get_memory(hl.reg16), "[hl]");
       //   cycle_count += 1;
       //   break;
       // case 0xBF:  cp_a_r8(af.reg.hi, "a"); break;
 
 
 
+      //
+      // BLOCK 3
+      //
       case 0xC6:  //add a, n8
-        sprintf(name, "%02X", memory[++pc.reg16]);
-        add_a_r8(memory[pc.reg16], name, false);
+        sprintf(name, "%02X", get_memory(++pc.reg16));
+        add_a_r8(get_memory(pc.reg16), name, 0);
         cycle_count += 1;
         break;
       // case 0xCE:  //adc a, n8
-      //   sprintf(name, "%02X", memory[++pc.reg16]);
-      //   add_a_r8(memory[pc.reg16], name, true);
+      //   sprintf(name, "%02X", get_memory(++pc.reg16));
+      //   add_a_r8(get_memory(pc.reg16), name, 1);
       //   cycle_count += 1;
       //   break;
       // case 0xD6:  //sub a, n8
-      //   sprintf(name, "%02X", memory[++pc.reg16]);
-      //   sub_a_r8(memory[pc.reg16], name, false);
+      //   sprintf(name, "%02X", get_memory(++pc.reg16));
+      //   sub_a_r8(get_memory(pc.reg16), name, 0);
       //   cycle_count += 1;
       //   break;
       // case 0xDE:  //sbc a, n8
-      //   sprintf(name, "%02X", memory[++pc.reg16]);
-      //   sub_a_r8(memory[pc.reg16], name, true);
+      //   sprintf(name, "%02X", get_memory(++pc.reg16));
+      //   sub_a_r8(get_memory(pc.reg16), name, 1);
       //   cycle_count += 1;
       //   break;
       case 0xE6:  //and a, n8
-        sprintf(name, "%02X", memory[++pc.reg16]);
-        and_a_r8(memory[pc.reg16], name);
+        sprintf(name, "%02X", get_memory(++pc.reg16));
+        and_a_r8(get_memory(pc.reg16), name);
         cycle_count += 1;
         break;
       // case 0xEE:  //xor a, n8
-      //   sprintf(name, "%02X", memory[++pc.reg16]);
-      //   xor_a_r8(memory[pc.reg16], name);
+      //   sprintf(name, "%02X", get_memory(++pc.reg16));
+      //   xor_a_r8(get_memory(pc.reg16), name);
       //   cycle_count += 1;
       //   break;
       case 0xF6:  //or a, n8
-        sprintf(name, "%02X", memory[++pc.reg16]);
-        or_a_r8(memory[pc.reg16], name);
+        sprintf(name, "%02X", get_memory(++pc.reg16));
+        or_a_r8(get_memory(pc.reg16), name);
         cycle_count += 1;
         break;
       case 0xFE:  //cp a, n8
-        sprintf(name, "%02X", memory[++pc.reg16]);
-        cp_a_r8(memory[pc.reg16], name);
+        sprintf(name, "%02X", get_memory(++pc.reg16));
+        cp_a_r8(get_memory(pc.reg16), name);
         cycle_count += 1;
         break;
          
@@ -446,12 +459,12 @@ int main()
       // case 0xD0:  ret_cc(!cf, "nc");  break;
       // case 0xD8:  ret_cc(cf, "c");  break;
       case 0xC9:  // ret
-        ret_cc(true, "");
+        ret_cc(1, "");
         cycle_count -= 1;
         break;
       case 0xD9:  // reti
-        interrupts_enabled = true;
-        ret_cc(true, "i");
+        ime0 = 1;
+        ret_cc(1, "i");
         cycle_count -= 1;
         break;
       
@@ -459,14 +472,14 @@ int main()
       case 0xCA:  jp_cc_n16(zf, "z"); break;
       // case 0xD2:  jp_cc_n16(!cf, "nc"); break;
       // case 0xDA:  jp_cc_n16(cf, "c"); break;
-      case 0xC3:  jp_cc_n16(true, "");  break;
+      case 0xC3:  jp_cc_n16(1, "");  break;
       case 0xE9:  // jp hl
         pc.reg16 = hl.reg16 - 1;
         cycle_count += 1;
 
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "jp\thl\n");
-        #endif
+#endif // LOG_FILE
 
         break;
       
@@ -474,7 +487,7 @@ int main()
       // case 0xCC:  call_cc_n16(zf, "z"); break;
       // case 0xD4:  call_cc_n16(!cf, "nc"); break;
       // case 0xDC:  call_cc_n16(cf, "c"); break;
-      case 0xCD:  call_cc_n16(true, "");  break;
+      case 0xCD:  call_cc_n16(1, "");  break;
 
       // case 0xC7:  rst(0x00);  break;
       // case 0xCF:  rst(0x08);  break;
@@ -510,10 +523,10 @@ int main()
         memory[n16.reg16] = af.reg.hi;
         cycle_count += 2;
 
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "ldh\t[c]\ta");
         fprintf(LOG_FILE, "\t\tc:\t%02X\t[c]:\t%02X\n", bc.reg.lo, memory[n16.reg16]);
-        #endif
+#endif // LOG_FILE
 
         break;
 
@@ -523,19 +536,22 @@ int main()
         memory[n16.reg16] = af.reg.hi;
         cycle_count += 3;
 
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "ldh\t[%04X],\ta", n16.reg16);
         fprintf(LOG_FILE, "\t\t[%04X]:\t%02X\n", n16.reg16, memory[n16.reg16]);
-        #endif
+#endif // LOG_FILE
 
         break;
 
       case 0xEA:  // ld [n16], a
-        n16.reg.lo = memory[++pc.reg16];
-        n16.reg.hi = memory[++pc.reg16];
-        sprintf(name, "[%04X]", n16.reg16);
-        ld_r8_r8(&memory[n16.reg16], name, af.reg.hi, "a");
-        cycle_count += 3;
+        n16.reg.lo = get_memory(++pc.reg16);
+        n16.reg.hi = get_memory(++pc.reg16);
+        set_memory(n16.reg16, af.reg.hi);
+        cycle_count += 4;
+#ifdef LOG_FILE
+        fprintf(LOG_FILE, "ld\t[%04X]\ta\t", n16.reg16);
+        fprintf(LOG_FILE, "\t\t[%04X]:\t%02X\n", n16.reg16, get_memory(n16.reg16));
+#endif // LOG_FILE
         break;
       
       case 0xF0:  // ldh a, [n8]
@@ -544,43 +560,45 @@ int main()
         af.reg.hi = memory[n16.reg16];
         cycle_count += 3;
 
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "ldh\ta,\t[%04X]", n16.reg16);
         fprintf(LOG_FILE, "\t\ta:\t%02X\n", af.reg.hi);
-        #endif
+#endif // LOG_FILE
 
         break;
       
       case 0xFA:  // ld a, [n16]
-        n16.reg.lo = memory[++pc.reg16];
-        n16.reg.hi = memory[++pc.reg16];
-        sprintf(name, "[%04X]", n16.reg16);
-        ld_r8_r8(&(af.reg.hi), "a", memory[n16.reg16], name);
-        cycle_count += 3;
+        n16.reg.lo = get_memory(++pc.reg16);
+        n16.reg.hi = get_memory(++pc.reg16);
+        af.reg.hi = get_memory(n16.reg16);
+        cycle_count += 4;
+#ifdef LOG_FILE
+        fprintf(LOG_FILE, "ld\ta\t[%04X]\t", n16.reg16);
+        fprintf(LOG_FILE, "\t\ta:\t%02X\n", af.reg.hi);
+#endif // LOG_FILE
         break;
       
       case 0xF3:  // di
-        interrupts_enabled = false;
+        ime0 = 0;
         cycle_count += 1;
-
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "di\n");
-        #endif
-
+#endif // LOG_FILE
         break;
       
       case 0xFB:  // ei
-        interrupts_enabled = true;
+        ime0 = 1;
         cycle_count += 1;
-
-        #ifdef GENERATE_LOGS
+#ifdef LOG_FILE
         fprintf(LOG_FILE, "ei\n");
-        #endif
-
+#endif // LOG_FILE
         break;
       
       
-      
+
+      //
+      // BLOCK CB
+      //
       case 0xCB:
         pc.reg16++;
         opcode = memory[pc.reg16];
@@ -588,55 +606,42 @@ int main()
           case 0x27:  sla_r8(&(af.reg.hi), "a");  break;
           case 0x37:  swap_r8(&(af.reg.hi), "a"); break;
           
-          case 0x50:  bit_bitn_r8(2, bc.reg.hi, "b"); break;
-          case 0x51:  bit_bitn_r8(2, bc.reg.lo, "c"); break;
-          case 0x52:  bit_bitn_r8(2, de.reg.hi, "d"); break;
-          case 0x53:  bit_bitn_r8(2, de.reg.lo, "e"); break;
-          case 0x54:  bit_bitn_r8(2, hl.reg.hi, "h"); break;
-          case 0x55:  bit_bitn_r8(2, hl.reg.lo, "l"); break;
-          case 0x57:  bit_bitn_r8(2, af.reg.hi, "a"); break;
-          case 0x58:  bit_bitn_r8(3, bc.reg.hi, "b"); break;
-          case 0x59:  bit_bitn_r8(3, bc.reg.lo, "c"); break;
-          case 0x5A:  bit_bitn_r8(3, de.reg.hi, "d"); break;
-          case 0x5B:  bit_bitn_r8(3, de.reg.lo, "e"); break;
-          case 0x5C:  bit_bitn_r8(3, hl.reg.hi, "h"); break;
-          case 0x5D:  bit_bitn_r8(3, hl.reg.lo, "l"); break;
-          case 0x5F:  bit_bitn_r8(3, af.reg.hi, "a"); break;
-          case 0x60:  bit_bitn_r8(4, bc.reg.hi, "b"); break;
-          case 0x61:  bit_bitn_r8(4, bc.reg.lo, "c"); break;
-          case 0x62:  bit_bitn_r8(4, de.reg.hi, "d"); break;
-          case 0x63:  bit_bitn_r8(4, de.reg.lo, "e"); break;
-          case 0x64:  bit_bitn_r8(4, hl.reg.hi, "h"); break;
-          case 0x65:  bit_bitn_r8(4, hl.reg.lo, "l"); break;
-          case 0x67:  bit_bitn_r8(4, af.reg.hi, "a"); break;
-          case 0x68:  bit_bitn_r8(5, bc.reg.hi, "b"); break;
-          case 0x69:  bit_bitn_r8(5, bc.reg.lo, "c"); break;
-          case 0x6A:  bit_bitn_r8(5, de.reg.hi, "d"); break;
-          case 0x6B:  bit_bitn_r8(5, de.reg.lo, "e"); break;
-          case 0x6C:  bit_bitn_r8(5, hl.reg.hi, "h"); break;
-          case 0x6D:  bit_bitn_r8(5, hl.reg.lo, "l"); break;
-          case 0x6F:  bit_bitn_r8(5, af.reg.hi, "a"); break;
-          case 0x70:  bit_bitn_r8(6, bc.reg.hi, "b"); break;
-          case 0x71:  bit_bitn_r8(6, bc.reg.lo, "c"); break;
-          case 0x72:  bit_bitn_r8(6, de.reg.hi, "d"); break;
-          case 0x73:  bit_bitn_r8(6, de.reg.lo, "e"); break;
-          case 0x74:  bit_bitn_r8(6, hl.reg.hi, "h"); break;
-          case 0x75:  bit_bitn_r8(6, hl.reg.lo, "l"); break;
-          case 0x77:  bit_bitn_r8(6, af.reg.hi, "a"); break;
-          case 0x78:  bit_bitn_r8(7, bc.reg.hi, "b"); break;
-          case 0x79:  bit_bitn_r8(7, bc.reg.lo, "c"); break;
-          case 0x7A:  bit_bitn_r8(7, de.reg.hi, "d"); break;
-          case 0x7B:  bit_bitn_r8(7, de.reg.lo, "e"); break;
-          case 0x7C:  bit_bitn_r8(7, hl.reg.hi, "h"); break;
-          case 0x7D:  bit_bitn_r8(7, hl.reg.lo, "l"); break;
-          case 0x7E:
-            bit_bitn_r8(7, memory[hl.reg16], "hl");
+          case 0x50: case 0x58: case 0x60: case 0x68:
+          case 0x70: case 0x78: case 0x40: case 0x48:
+            bit_bitn_r8((opcode >> 3) & 0x7, bc.reg.hi, "b");
+            break;
+          case 0x51: case 0x59: case 0x61: case 0x69:
+          case 0x71: case 0x79: case 0x41: case 0x49:
+            bit_bitn_r8((opcode >> 3) & 0x7, bc.reg.lo, "c");
+            break;
+          case 0x52: case 0x5A: case 0x62: case 0x6A:
+          case 0x72: case 0x7A: case 0x42: case 0x4A:
+            bit_bitn_r8((opcode >> 3) & 0x7, de.reg.hi, "d");
+            break;
+          case 0x53: case 0x5B: case 0x63: case 0x6B:
+          case 0x73: case 0x7B: case 0x43: case 0x4B:
+            bit_bitn_r8((opcode >> 3) & 0x7, de.reg.lo, "e");
+            break;
+          case 0x54: case 0x5C: case 0x64: case 0x6C:
+          case 0x74: case 0x7C: case 0x44: case 0x4C:
+            bit_bitn_r8((opcode >> 3) & 0x7, hl.reg.hi, "h");
+            break;
+          case 0x55: case 0x5D: case 0x65: case 0x6D:
+          case 0x75: case 0x7D: case 0x45: case 0x4D:
+            bit_bitn_r8((opcode >> 3) & 0x7, hl.reg.lo, "l");
+            break;
+          case 0x56: case 0x5E: case 0x66: case 0x6E:
+          case 0x76: case 0x7E: case 0x46: case 0x4E:
+            bit_bitn_r8((opcode >> 3) & 0x7, get_memory(hl.reg16), "[hl]");
             cycle_count += 1;
             break;
-          case 0x7F:  bit_bitn_r8(7, af.reg.hi, "a"); break;
+          case 0x57: case 0x5F: case 0x67: case 0x6F:
+          case 0x77: case 0x7F: case 0x47: case 0x4F:
+            bit_bitn_r8((opcode >> 3) & 0x7, bc.reg.hi, "a");
+            break;
 
           case 0x86:
-            res_bitn_r8(0, &memory[hl.reg16], "hl");  break;
+            res_bitn_r8(0, get_setter_memory(hl.reg16), "[hl]");
             cycle_count += 2;
             break;
           case 0x87:  res_bitn_r8(0, &(af.reg.hi), "a");  break;

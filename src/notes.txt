@@ -1,0 +1,30 @@
+--LOAD INSTRUCTIONS--
+a, [r16]
+r8, [hl]
+a, [n16]
+
+a, [c]
+a, [n8]
+
+
+[r16], a
+[n16], sp
+[hl], n8
+[hl], r8
+[n16], a
+
+[c], a
+[n8], a
+
+
+r16, n16
+r8, n8
+r8, r8
+hl, sp + n8
+sp, hl
+
+
+--NOTES--
+read write accesses to sp register pointed memory is not wrapped in getters and setters
+because only an idiot will try to push to read only memory.
+In case it is needed in future all of those are in iblk3.h including ret and call.

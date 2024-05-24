@@ -24,4 +24,9 @@ extern uint8_t zf, nf, hf, cf, ime0;        //  Flags
 extern uint8_t cycle_count;
 
 
+#ifdef LOG_FILE
+extern FILE *LOG_FILE;
+#endif // LOG_FILE
+
+
 #endif //GBCPU_H
