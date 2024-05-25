@@ -650,6 +650,8 @@ int main()
 
           default:
             fprintf(LOG_FILE, "Unknown CB prefix instruction");
+            void dump_vram();
+            dump_vram();
             exit(1);
         }
         break;
@@ -683,13 +685,85 @@ static inline void ppu()
 
     if (memory[0xff44] == 0x90)
       memory[0xff0f] |= 0x01;
-
-    // Dump vram into a log file
-    // FILE *fptr = fopen("vram.txt", "w");
-    // for (int i = 0x8000; i < 0x9800; i++) {
-    //   fprintf(fptr, "%02X ", memory[i]);
-    // }
-    // fprintf(fptr, "\n");
-    // fclose(fptr);
   }
+}
+
+static inline uint8_t read_tile(pixel buf[8][8], uint8_t address)
+{
+  for (int i = 0; i < 8; i++)
+  {
+    const uint8_t byte1 = memory[address++];
+    const uint8_t byte2 = memory[address++];
+
+    for (int j = 0; j < 8; j++)
+    {
+      const uint8_t value = (~(((byte1 >> j) & 1) | (((byte2 >> j) & 1) << 1)) & 3) * 85;
+      buf[i][j].blue = value;
+      buf[i][j].green = value;
+      buf[i][j].red = value;
+    }
+  }
+
+  return address;
+}
+
+void dump_vram()
+{
+  // FILE *fptr = fopen("vram.txt", "w");
+  // for (int i = 0x8000; i < 0x9FFF; i++) {
+  //   fprintf(fptr, "%02X ", memory[i]);
+  // }
+  // fprintf(fptr, "\n");
+  // fclose(fptr);
+
+  FILE *f = fopen("output.bmp", "w");
+  if (f == NULL) {
+    printf("Failed to open file!\n");
+    exit(1);
+  }
+  const uint16_t type = 0x4D42;
+  const bmp_header_t header = { 54 + 3*8*8*32*32, 0, 0, 54 };
+  const bmp_info_header_t info_header = { 40, 8*32, 8*32, 1, 24, 0, 3*8*8*32*32, 2835, 2835, 0, 0 };
+
+  fwrite(&type, sizeof(type), 1, f);
+  fwrite(&header, sizeof(header), 1, f);
+  fwrite(&info_header, sizeof(info_header), 1, f);
+
+  tile tilemap[32][32];
+  uint16_t address = 0x9800;
+  uint16_t offset = 0x8000;
+  printf("%llu\n", sizeof(pixel));
+  for (int i = 0; i < 32; i++)
+    for (int j = 0; j < 32; j++)
+    {
+      printf("\n%02X\t", memory[address]);
+      uint16_t address1 = offset + 16 * memory[address++];
+      printf("%04X:\n", address1);
+
+      for (int x = 0; x < 8; x++)
+      {
+        const uint8_t byte1 = memory[address1++];
+        const uint8_t byte2 = memory[address1++];
+        printf("%02X %02X ", byte1, byte2);
+
+        for (int y = 0; y < 8; y++)
+        {
+          const uint8_t value = (~(((byte1 >> y) & 1) | (((byte2 >> y) & 1) << 1)) & 3) * 85;
+          tilemap[i][j].pixels[x][y].blue = value;
+          tilemap[i][j].pixels[x][y].green = value;
+          tilemap[i][j].pixels[x][y].red = value;
+          // fwrite(&tilemap[i][j].pixels[x][y], sizeof(pixel), 1, f);
+        }
+      }
+    }
+
+  pixel frame[256][256];
+  for (int i = 31; i >= 0; i--)
+    for (int x = 7; x >= 0; x--)
+      for (int j = 0; j < 32; j++)
+        for (int y = 7; y >= 0; y--)
+          fwrite(&tilemap[i][j].pixels[x][y], sizeof(pixel), 1, f);
+
+
+  fclose(f);
 }
