@@ -28,3 +28,10 @@ sp, hl
 read write accesses to sp register pointed memory is not wrapped in getters and setters
 because only an idiot will try to push to read only memory.
 In case it is needed in future all of those are in iblk3.h including ret and call.
+
+write design decisions on
+why iblk headers dont have any includes
+use of static inline in headers
+
+to do at end:
+eliminate magic numbers as much as possible
