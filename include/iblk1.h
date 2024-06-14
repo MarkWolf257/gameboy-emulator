@@ -18,12 +18,13 @@ ld_r8_r8(uint8_t * const r8l, const char *namel, const uint8_t r8r, const char *
 static inline void
 ld_mhl_r8(const uint8_t r8, const char *name)
 {
-    *get_rw_memptr(hl.reg16) = r8;
+    const uint16_t hl = h << 8 | l;
+    *get_rw_memptr(hl) = r8;
     cycle_count += 2;
 
 #ifdef GENERATE_LOGS
     fprintf(log_file, "ld\t[hl],\t%s", name);
-    fprintf(log_file, "\t\thl:\t%04X\t[hl]:\t%02X\n", hl.reg16, *get_rw_memptr(hl.reg16));
+    fprintf(log_file, "\t\thl:\t%04X\t[hl]:\t%02X\n", hl, *get_rw_memptr(hl));
 #endif // GENERATE_LOGS
 }
 
@@ -31,12 +32,13 @@ ld_mhl_r8(const uint8_t r8, const char *name)
 static inline void
 ld_r8_mhl(uint8_t * const r8, const char *name)
 {
-    *r8 = get_ro_mem(hl.reg16);
+    const uint16_t hl = h << 8 | l;
+    *r8 = get_ro_mem(hl);
     cycle_count += 2;
 
 #ifdef GENERATE_LOGS
     fprintf(log_file, "ld\t%s,\t[hl]", name);
-    fprintf(log_file, "\t\t%s:\t%02X\thl:\t%04X\n", name, *r8, hl.reg16);
+    fprintf(log_file, "\t\t%s:\t%02X\thl:\t%04X\n", name, *r8, hl);
 #endif // GENERATE_LOGS
 }
 

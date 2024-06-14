@@ -6,9 +6,9 @@ static inline void
 ret_cc(const uint8_t cc, const char *name)
 {
     if (cc) {
-        pc.reg.lo = memory[++sp.reg16];
-        pc.reg.hi = memory[++sp.reg16];
-        --pc.reg16;
+        pc = memory[sp + 2] << 8 | memory[sp + 1];
+        sp += 2;
+        pc -= 1;
         cycle_count += 3;
     }
     cycle_count += 2;
@@ -22,20 +22,20 @@ ret_cc(const uint8_t cc, const char *name)
 static inline void
 jp_cc_n16(const uint8_t cc, const char *name)
 {
-    uint16_t n16 = pc.reg16;
-    pc.reg.lo = get_ro_mem(++n16);
-    pc.reg.hi = get_ro_mem(++n16);
+    uint16_t n16 = pc;
+    pc = get_ro_mem(n16 + 2) << 8 | get_ro_mem(n16 + 1);
+    n16 += 2;
     cycle_count += 3;
 
 #ifdef GENERATE_LOGS
-    fprintf(log_file, "jp%s\t%04X\n", name, pc.reg16);
+    fprintf(log_file, "jp%s\t%04X\n", name, pc);
 #endif // GENERATE_LOGS
 
     if (cc) {
-        pc.reg16--;
+        pc -= 1;
         cycle_count += 1;
     } else {
-        pc.reg16 = n16;
+        pc = n16;
     }
 }
 
@@ -43,21 +43,20 @@ jp_cc_n16(const uint8_t cc, const char *name)
 static inline void
 call_cc_n16(const uint8_t cc, const char *name)
 {
-    register16_t n16;
-    n16.reg.lo = get_ro_mem(++pc.reg16);
-    n16.reg.hi = get_ro_mem(++pc.reg16);
+    uint16_t n16 = get_ro_mem(pc + 2) << 8 | get_ro_mem(pc + 1);
+    pc += 2;
     cycle_count += 3;
 
     if (cc) {
-        ++pc.reg16;
-        memory[sp.reg16--] = pc.reg.hi;
-        memory[sp.reg16--] = pc.reg.lo;
-        pc.reg16 = n16.reg16 - 1;
+        pc += 1;
+        memory[sp--] = pc >> 8;
+        memory[sp--] = pc;
+        pc = n16 - 1;
         cycle_count += 3;
     }
 
 #ifdef GENERATE_LOGS
-    fprintf(log_file, "call%s\t%04X\n", name, n16.reg16);
+    fprintf(log_file, "call%s\t%04X\n", name, n16);
 #endif // GENERATE_LOGS
 }
 
@@ -65,10 +64,10 @@ call_cc_n16(const uint8_t cc, const char *name)
 static inline void
 rst(const uint16_t address)
 {
-    ++pc.reg16;
-    memory[sp.reg16--] = pc.reg.hi;
-    memory[sp.reg16--] = pc.reg.lo;
-    pc.reg16 = address - 1;
+    pc += 1;
+    memory[sp--] = pc >> 8;
+    memory[sp--] = pc;
+    pc = address - 1;
     cycle_count += 4;
 
 #ifdef GENERATE_LOGS
@@ -78,24 +77,24 @@ rst(const uint16_t address)
 
 
 static inline void
-pop_r16(register16_t * const r16, const char *name)
+pop_r16(uint8_t *hi, uint8_t *lo, const char *name)
 {
-    r16->reg.lo = memory[++sp.reg16];
-    r16->reg.hi = memory[++sp.reg16];
+    *lo = memory[++sp];
+    *hi = memory[++sp];
     cycle_count += 3;
 
 #ifdef GENERATE_LOGS
     fprintf(log_file, "pop\t%s\t", name);
-    fprintf(log_file, "\t\t%s:\t%04X\n", name, r16->reg16);
+    fprintf(log_file, "\t\t%s:\t%02X%02X\n", name, *hi, *lo);
 #endif // GENERATE_LOGS
 }
 
 
 static inline void
-push_r16(const register16_t r16, const char *name)
+push_r16(const uint8_t hi, const uint8_t lo, const char *name)
 {
-    memory[sp.reg16--] = r16.reg.hi;
-    memory[sp.reg16--] = r16.reg.lo;
+    memory[sp--] = hi;
+    memory[sp--] = lo;
     cycle_count += 4;
 
 #ifdef GENERATE_LOGS

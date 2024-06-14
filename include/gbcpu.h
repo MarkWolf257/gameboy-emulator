@@ -6,15 +6,18 @@
 
 
 // Register Types
-typedef union register16_t
-{
-    struct
-    {
-        uint8_t lo, hi;
-    } reg;
+// typedef union register16_t
+// {
+//     struct
+//     {
+//         uint8_t lo, hi;
+//     } reg;
+//
+//     uint16_t reg16;
+// } register16_t;
 
-    uint16_t reg16;
-} register16_t;
+
+
 
 
 void init_gbcpu();

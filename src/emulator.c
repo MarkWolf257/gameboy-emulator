@@ -183,6 +183,7 @@ int main(int argc, char *args[])
         gbcpu_process(CYCLES_PER_LINE);
         gbppu_process(emulator_surface);
         SDL_UpdateWindowSurface(emulator_window);
+
         memory[0xff44] = (memory[0xff44] + 1) % VERTICAL_LINES;
         cycle_count %= CYCLES_PER_LINE;
 
