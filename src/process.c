@@ -1,13 +1,152 @@
-#include "../include/emulator.h"
+#define GENERATE_LOGS
+
 #include "../include/gbmem.h"
-#include "../include/gbcpu.h"
+#include "../include/process.h"
+
+#include <stdio.h>
 
 
-// static register16_t af, bc, de, hl, pc, sp;
-static uint8_t a, f, b, c, d, e, h, l;
-static uint16_t pc, sp;
-static uint8_t zf, nf, hf, cf;
-static uint8_t ext_ime;
+const int GB_SCREEN_WIDTH = 160;
+const int GB_SCREEN_HEIGHT = 144;
+const int CYCLES_PER_LINE = 114;
+const int GB_VIRTUAL_HEIGHT = 154;
+
+const int LCDC = 0xFF40;
+const int SCY = 0xFF42;
+const int SCX = 0xFF43;
+
+
+static void execute_instructions(int);
+static inline void render_frame(const SDL_Surface *);
+static inline void read_tilemaps();
+
+
+static Uint8 tilemaps[4][256][256]; // Stores palette indices
+static int cycle_count = 0;
+
+#ifdef GENERATE_LOGS
+FILE *log_file;
+#endif //GENERATE_LOGS
+
+
+void init_process()
+{
+#ifdef GENERATE_LOGS
+
+    log_file = fopen("execution_log.txt", "w");
+    if (log_file == NULL) {
+        printf("Error! Writing to log file");
+        exit(EXIT_FAILURE);
+    }
+
+#endif // GENERATE_LOGS
+}
+
+
+void process_and_render_frame(const SDL_Surface *surface)
+{
+    memory[LY] = 0;
+    for (size_t i = 0; i < GB_VIRTUAL_HEIGHT; i++) {
+        execute_instructions(CYCLES_PER_LINE);
+
+        if (i < GB_SCREEN_HEIGHT)
+            render_frame(surface);
+
+        memory[LY]++;
+        cycle_count %= CYCLES_PER_LINE;
+
+        if (i == 0x90)
+            memory[0xff0f] |= 0x01;
+    }
+
+    read_tilemaps();
+}
+
+
+static inline void
+read_tilemaps()
+{
+    size_t map_address = 0x9800;
+
+    for (int k = 0; k < 2; k++)
+        for (int i = 0; i < 32; i++)
+            for (int j = 0; j < 32; j++)
+            {
+                Uint8 index = memory[map_address++];
+                Uint16 address1 = 0x8000 + 16 * index;
+                // Exploiting overflow
+                index += 128;
+                Uint16 address2 = 0x8800 + 16 * index;
+
+                for (int y = 0; y < 8; y++)
+                {
+                    const Uint8 byte1 = memory[address1++];
+                    const Uint8 byte2 = memory[address1++];
+                    const Uint8 byte3 = memory[address2++];
+                    const Uint8 byte4 = memory[address2++];
+
+                    for (int x = 0; x < 8; x++)
+                    {
+                        tilemaps[ 0 + k ][ i * 8 + y ][ j * 8 + x ] =
+                            (((byte1 << x) & 0x80) >> 7) | (((byte2 << x) & 0x80) >> 6);
+                        tilemaps[ 2 + k ][ i * 8 + y ][ j * 8 + x ] =
+                            (((byte3 << x) & 0x80) >> 7) | (((byte4 << x) & 0x80) >> 6);
+                    }
+
+                }
+            }
+}
+
+
+static inline void
+render_frame(const SDL_Surface *surface)
+{
+    const Uint8 lcdc = memory[LCDC];
+    const Uint8 ly = memory[LY];
+    const Uint8 palette[] = { 255, 170, 85, 0 };
+
+    if ((lcdc & 0x80) == 0)
+        return;
+
+    if (lcdc & 0x01) {
+        const Uint8 y = memory[SCY] + ly;
+        Uint8 x = memory[SCX];
+        const Uint8 k = (lcdc >> 2) & 0x03;
+
+        Uint8 *ptr = surface->pixels;
+        ptr += surface->format->BytesPerPixel * GB_SCREEN_WIDTH * ly;
+
+        for (size_t i = 0; i < GB_SCREEN_WIDTH; i++, x++)
+        {
+            const Uint8 value = palette[ tilemaps[k][y][x] ];
+            memset(ptr, SDL_MapRGB(surface->format, value, value, value), surface->format->BytesPerPixel);
+            ptr += surface->format->BytesPerPixel;
+        }
+    }
+}
+
+
+
+
+
+static Uint8
+    a = 0x01,
+    f = 0xB0,
+    b = 0x00,
+    c = 0x13,
+    d = 0x00,
+    e = 0xD8,
+    h = 0x01,
+    l = 0x4D;
+static Uint16
+    pc = 0x0100,
+    sp = 0xFFFE;
+static Uint8
+    zf = 1,
+    nf = 0,
+    hf = 1,
+    cf = 1;
+static Uint8 ext_ime = 0;
 
 
 #include "../include/iblk0.h"
@@ -17,34 +156,11 @@ static uint8_t ext_ime;
 #include "../include/iblkcb.h"
 
 
-static uint8_t int_ime;
+static Uint8 int_ime = 0;
 
 
-void init_gbcpu()
-{
-    a = 0x01;
-    f = 0xB0;
-    b = 0x00;
-    c = 0x13;
-    d = 0x00;
-    e = 0xD8;
-    h = 0x01;
-    l = 0x4D;
-    pc = 0x0100;
-    sp = 0xFFFE;
-
-    zf = 1;
-    nf = 0;
-    hf = 1;
-    cf = 1;
-
-    ext_ime = 0;
-    int_ime = 0;
-}
-
-
-// Executes instructions in parallel to one line of ppu
-void gbcpu_process(const size_t cycles_to_execute)
+static inline void
+execute_instructions(const int cycles_to_execute)
 {
     while (cycle_count < cycles_to_execute) {
         // Call interrupt if enabled
@@ -71,11 +187,11 @@ void gbcpu_process(const size_t cycles_to_execute)
         fprintf(log_file, "%04X:\t", pc);
 #endif // GENERATE_LOGS
 
-        uint8_t opcode = get_ro_mem(pc);
+        Uint8 opcode = get_ro_mem(pc);
 
         char name[8];
-        uint8_t n8, hi, lo;
-        uint16_t n16;
+        Uint8 n8, hi, lo;
+        Uint16 n16;
 
         switch (opcode)
         {

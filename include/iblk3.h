@@ -3,7 +3,7 @@
 
 
 static inline void
-ret_cc(const uint8_t cc, const char *name)
+ret_cc(const Uint8 cc, const char *name)
 {
     if (cc) {
         pc = memory[sp + 2] << 8 | memory[sp + 1];
@@ -20,9 +20,9 @@ ret_cc(const uint8_t cc, const char *name)
 
 
 static inline void
-jp_cc_n16(const uint8_t cc, const char *name)
+jp_cc_n16(const Uint8 cc, const char *name)
 {
-    uint16_t n16 = pc;
+    Uint16 n16 = pc;
     pc = get_ro_mem(n16 + 2) << 8 | get_ro_mem(n16 + 1);
     n16 += 2;
     cycle_count += 3;
@@ -41,9 +41,9 @@ jp_cc_n16(const uint8_t cc, const char *name)
 
 
 static inline void
-call_cc_n16(const uint8_t cc, const char *name)
+call_cc_n16(const Uint8 cc, const char *name)
 {
-    uint16_t n16 = get_ro_mem(pc + 2) << 8 | get_ro_mem(pc + 1);
+    Uint16 n16 = get_ro_mem(pc + 2) << 8 | get_ro_mem(pc + 1);
     pc += 2;
     cycle_count += 3;
 
@@ -62,7 +62,7 @@ call_cc_n16(const uint8_t cc, const char *name)
 
 
 static inline void
-rst(const uint16_t address)
+rst(const Uint16 address)
 {
     pc += 1;
     memory[sp--] = pc >> 8;
@@ -77,7 +77,7 @@ rst(const uint16_t address)
 
 
 static inline void
-pop_r16(uint8_t *hi, uint8_t *lo, const char *name)
+pop_r16(Uint8 *hi, Uint8 *lo, const char *name)
 {
     *lo = memory[++sp];
     *hi = memory[++sp];
@@ -91,7 +91,7 @@ pop_r16(uint8_t *hi, uint8_t *lo, const char *name)
 
 
 static inline void
-push_r16(const uint8_t hi, const uint8_t lo, const char *name)
+push_r16(const Uint8 hi, const Uint8 lo, const char *name)
 {
     memory[sp--] = hi;
     memory[sp--] = lo;

@@ -3,7 +3,7 @@
 
 
 static inline void
-sla_r8(uint8_t * const r8, const char *name)
+sla_r8(Uint8 * const r8, const char *name)
 {
     cf = *r8 >> 7;
     *r8 <<= 1;
@@ -18,7 +18,7 @@ sla_r8(uint8_t * const r8, const char *name)
 
 
 static inline void
-swap_r8(uint8_t * const r8, const char *name)
+swap_r8(Uint8 * const r8, const char *name)
 {
     *r8 = *r8 << 4 | *r8 >> 4;
     zf = !(*r8);
@@ -33,7 +33,7 @@ swap_r8(uint8_t * const r8, const char *name)
 
 
 static inline void
-bit_bitn_r8(const uint8_t n, const uint8_t r8, const char *name)
+bit_bitn_r8(const Uint8 n, const Uint8 r8, const char *name)
 {
     zf = !((r8 >> n) & 1);
     nf = 0; hf = 1;
@@ -47,7 +47,7 @@ bit_bitn_r8(const uint8_t n, const uint8_t r8, const char *name)
 
 
 static inline void
-res_bitn_r8(const uint8_t n, uint8_t * const r8, const char *name)
+res_bitn_r8(const Uint8 n, Uint8 * const r8, const char *name)
 {
     *r8 &= ~(1 << n);
     cycle_count += 2;
@@ -60,7 +60,7 @@ res_bitn_r8(const uint8_t n, uint8_t * const r8, const char *name)
 
 
 static inline void
-set_bitn_r8(const uint8_t n, uint8_t * const r8, const char *name)
+set_bitn_r8(const Uint8 n, Uint8 * const r8, const char *name)
 {
     *r8 |= (1 << n);
     cycle_count += 2;

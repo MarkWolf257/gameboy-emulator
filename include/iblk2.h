@@ -3,7 +3,7 @@
 
 
 static inline void
-add_a_r8(const uint8_t r8, const char *name, const uint8_t carry)
+add_a_r8(const Uint8 r8, const char *name, const Uint8 carry)
 {
     a += (r8 + (carry ? cf : 0));
     zf = !(a);
@@ -20,7 +20,7 @@ add_a_r8(const uint8_t r8, const char *name, const uint8_t carry)
 
 
 static inline void
-sub_a_r8(const uint8_t r8, const char *name, const uint8_t carry)
+sub_a_r8(const Uint8 r8, const char *name, const Uint8 carry)
 {
     hf = (a & 0xf) < (r8 & 0xf);
     cf = a < r8;
@@ -37,7 +37,7 @@ sub_a_r8(const uint8_t r8, const char *name, const uint8_t carry)
 
 
 static inline void
-and_a_r8(const uint8_t r8, const char *name)
+and_a_r8(const Uint8 r8, const char *name)
 {
     a &= r8;
     zf = !(a);
@@ -52,7 +52,7 @@ and_a_r8(const uint8_t r8, const char *name)
 
 
 static inline void
-xor_a_r8(const uint8_t r8, const char *name)
+xor_a_r8(const Uint8 r8, const char *name)
 {
     a ^= r8;
     zf = !(a);
@@ -67,7 +67,7 @@ xor_a_r8(const uint8_t r8, const char *name)
 
 
 static inline void
-or_a_r8(const uint8_t r8, const char *name)
+or_a_r8(const Uint8 r8, const char *name)
 {
     a |= r8;
     zf = !(a);
@@ -82,7 +82,7 @@ or_a_r8(const uint8_t r8, const char *name)
 
 
 static inline void
-cp_a_r8(const uint8_t r8, const char *name)
+cp_a_r8(const Uint8 r8, const char *name)
 {
     zf = a == r8;
     nf = 1;

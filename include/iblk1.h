@@ -3,7 +3,7 @@
 
 
 static inline void
-ld_r8_r8(uint8_t * const r8l, const char *namel, const uint8_t r8r, const char *namer)
+ld_r8_r8(Uint8 * const r8l, const char *namel, const Uint8 r8r, const char *namer)
 {
     *r8l = r8r;
     cycle_count += 1;
@@ -16,9 +16,9 @@ ld_r8_r8(uint8_t * const r8l, const char *namel, const uint8_t r8r, const char *
 
 
 static inline void
-ld_mhl_r8(const uint8_t r8, const char *name)
+ld_mhl_r8(const Uint8 r8, const char *name)
 {
-    const uint16_t hl = h << 8 | l;
+    const Uint16 hl = h << 8 | l;
     *get_rw_memptr(hl) = r8;
     cycle_count += 2;
 
@@ -30,9 +30,9 @@ ld_mhl_r8(const uint8_t r8, const char *name)
 
 
 static inline void
-ld_r8_mhl(uint8_t * const r8, const char *name)
+ld_r8_mhl(Uint8 * const r8, const char *name)
 {
-    const uint16_t hl = h << 8 | l;
+    const Uint16 hl = h << 8 | l;
     *r8 = get_ro_mem(hl);
     cycle_count += 2;
 

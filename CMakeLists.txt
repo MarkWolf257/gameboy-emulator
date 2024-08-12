@@ -14,9 +14,11 @@ set(CMAKE_C_STANDARD 11)
 #        include/gbppu.h
 #)
 
-add_executable(emulator src/emulator.c
-        src/gbcpu.c
-        src/gbppu.c
+add_executable(emulator src/main.c
+#        src/gbcpu.c
+#        src/gbppu.c
+        src/process.c
+        include/process.h
 )
 
 target_link_libraries(emulator mingw32 SDL2main SDL2)

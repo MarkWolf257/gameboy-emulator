@@ -3,7 +3,7 @@
 
 
 static inline void
-ld_r16_n16(uint8_t *hi, uint8_t *lo, const char *name)
+ld_r16_n16(Uint8 *hi, Uint8 *lo, const char *name)
 {
     *lo = get_ro_mem(++pc);
     *hi = get_ro_mem(++pc);
@@ -16,9 +16,9 @@ ld_r16_n16(uint8_t *hi, uint8_t *lo, const char *name)
 
 
 static inline void
-ld_mr16_a(const uint8_t hi, const uint8_t lo, const char *name)
+ld_mr16_a(const Uint8 hi, const Uint8 lo, const char *name)
 {
-    const uint16_t r16 = hi << 8 | lo;
+    const Uint16 r16 = hi << 8 | lo;
     *get_rw_memptr(r16) = a;
     cycle_count += 2;
 
@@ -30,9 +30,9 @@ ld_mr16_a(const uint8_t hi, const uint8_t lo, const char *name)
 
 
 static inline void
-ld_a_mr16(const uint8_t hi, const uint8_t lo, const char *name)
+ld_a_mr16(const Uint8 hi, const Uint8 lo, const char *name)
 {
-    const uint16_t r16 = hi << 8 | lo;
+    const Uint16 r16 = hi << 8 | lo;
     a = get_ro_mem(r16);
     cycle_count += 2;
 
@@ -44,7 +44,7 @@ ld_a_mr16(const uint8_t hi, const uint8_t lo, const char *name)
 
 
 static inline void
-inc_r16(uint8_t *hi, uint8_t *lo, const char *name)
+inc_r16(Uint8 *hi, Uint8 *lo, const char *name)
 {
     *lo += 1;
     *hi += !(*lo);
@@ -58,7 +58,7 @@ inc_r16(uint8_t *hi, uint8_t *lo, const char *name)
 
 
 static inline void
-dec_r16(uint8_t *hi, uint8_t *lo, const char *name)
+dec_r16(Uint8 *hi, Uint8 *lo, const char *name)
 {
     *hi -= !(*lo);
     *lo -= 1;
@@ -72,7 +72,7 @@ dec_r16(uint8_t *hi, uint8_t *lo, const char *name)
 
 
 static inline void
-add_hl_r16(const uint8_t hi, const uint8_t lo, const char *name)
+add_hl_r16(const Uint8 hi, const Uint8 lo, const char *name)
 {
     l += lo;
     hf = l < lo;
@@ -90,7 +90,7 @@ add_hl_r16(const uint8_t hi, const uint8_t lo, const char *name)
 
 
 static inline void
-inc_r8(uint8_t *r8, const char *name)
+inc_r8(Uint8 *r8, const char *name)
 {
     (*r8)++;
     zf = !(*r8);
@@ -106,7 +106,7 @@ inc_r8(uint8_t *r8, const char *name)
 
 
 static inline void
-dec_r8(uint8_t *r8, const char *name)
+dec_r8(Uint8 *r8, const char *name)
 {
     hf = !((*r8) & 0xf);
     (*r8)--;
@@ -122,7 +122,7 @@ dec_r8(uint8_t *r8, const char *name)
 
 
 static inline void
-ld_r8_n8(uint8_t *r8, const char *name)
+ld_r8_n8(Uint8 *r8, const char *name)
 {
     *r8 = get_ro_mem(++pc);
     cycle_count += 2;
@@ -134,9 +134,9 @@ ld_r8_n8(uint8_t *r8, const char *name)
 
 
 static inline void
-jr_cc_n8(const uint8_t cc, const char *name)
+jr_cc_n8(const Uint8 cc, const char *name)
 {
-    const uint8_t n8 = get_ro_mem(++pc);
+    const Uint8 n8 = get_ro_mem(++pc);
     if (cc)
     {
         pc = (int16_t) pc + (int8_t) n8;
