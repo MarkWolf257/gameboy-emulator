@@ -6,15 +6,17 @@
 #include <stdlib.h>
 
 
+// Emulated Primary Memory
 Uint8 *memory;
 
 
 void init_emulator()
 {
-    // Load ROM into memory
+    // Allocate memory
     memory = malloc((GB_MEMORY_SIZE + 1) * sizeof(*memory));
 
-    FILE *fptr = fopen("../roms/rom0.gb", "rb");
+    // Load ROM into memory
+    FILE *fptr = fopen("../roms/loopz.gb", "rb");
     if (fptr == NULL) {
         printf("Error! opening file");
         exit(1);
@@ -24,6 +26,7 @@ void init_emulator()
         printf("Error! reading file");
         exit(1);
     }
+    memory[DMA] = 0xFF;
     fclose(fptr);
 }
 
@@ -56,15 +59,27 @@ int main(int argc, char *args[])
 
     SDL_Event e;
     bool quit = false;
+    Uint64 start = SDL_GetPerformanceCounter();
+
 
     while (quit == false) {
-        process_and_render_frame(emulator_surface);
-        SDL_UpdateWindowSurface(emulator_window);
-
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT)
                 quit = true;
         }
+
+        double secondsElapsed;
+
+        process_and_render_frame(emulator_surface);
+
+        do {
+            Uint64 end = SDL_GetPerformanceCounter();
+            secondsElapsed = (end - start) / (double)SDL_GetPerformanceFrequency();
+        } while (secondsElapsed < (1.0 / 60.0));
+
+        start = SDL_GetPerformanceCounter();
+
+        SDL_UpdateWindowSurface(emulator_window);
     }
 
     SDL_DestroyWindow(emulator_window);

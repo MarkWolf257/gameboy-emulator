@@ -19,6 +19,8 @@ add_executable(emulator src/main.c
 #        src/gbppu.c
         src/process.c
         include/process.h
+        src/graphics.c
+        include/graphics.h
 )
 
 target_link_libraries(emulator mingw32 SDL2main SDL2)
