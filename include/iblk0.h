@@ -72,13 +72,14 @@ dec_r16(Uint8 *hi, Uint8 *lo, const char *name)
 
 
 static inline void
-add_hl_r16(const Uint8 hi, const Uint8 lo, const char *name)
+add_hl_r16(Uint8 hi, const Uint8 lo, const char *name)
 {
     l += lo;
-    hf = l < lo;
-    h += hi + hf;
+    hi += l < lo;
+    h += hi;
     nf = 0;
-    cf = h < hi;
+    hf = (h & 0xf) < (hi & 0xf) || ((hi & 0xf) < (l < lo));
+    cf = h < hi || (hi < (l < lo));
 
     cycle_count += 2;
 
@@ -139,7 +140,7 @@ jr_cc_n8(const Uint8 cc, const char *name)
     const Uint8 n8 = get_ro_mem(++pc);
     if (cc)
     {
-        pc = (int16_t) pc + (int8_t) n8;
+        pc += (Sint8) n8;
         cycle_count += 1;
     }
     cycle_count += 2;

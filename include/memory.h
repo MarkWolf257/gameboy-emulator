@@ -3,11 +3,18 @@
 
 #include <SDL2/SDL.h>
 
+// Constants for memory
 #define GB_MEMORY_SIZE 0x10000
 #define GB_BANK_SIZE 0x4000
 
+// Memory register addresses
 #define JOYP 0xFF00
+#define SB 0xFF01
+#define SC 0xFF02
 #define DIV 0xFF04
+#define TIMA 0xFF05
+#define TMA 0xFF06
+#define TAC 0xFF07
 #define IF 0xFF0F
 #define LCDC 0xFF40
 #define STAT 0xFF41
@@ -21,8 +28,10 @@
 #define OBP1 0xff49
 #define WY 0xFF4A
 #define WX 0xFF4B
+#define IE 0xFFFF
 
 
+// Memory variable
 extern Uint8 *memory;
 
 

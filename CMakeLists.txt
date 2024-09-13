@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD 11)
 #add_executable(emulator src/emulator.c
 #        include/gbcpu.h
 #        include/iblk0.h
-#        include/gbmem.h
+#        include/memory.h
 #        include/iblk1.h
 #        include/iblk2.h
 #        include/iblk3.h

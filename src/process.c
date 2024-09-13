@@ -1,6 +1,6 @@
-// #define GENERATE_LOGS
+#define GENERATE_LOGS
 
-#include "../include/gbmem.h"
+#include "../include/memory.h"
 #include "../include/process.h"
 #include "../include/graphics.h"
 
@@ -15,23 +15,6 @@ static int on_halt = 0;
 
 
 static void execute_instruction();
-// static inline void render_line(const SDL_Surface *);
-// static inline void read_vram();
-
-
-// Stores 4 tilemaps
-// static Uint8 tilemaps[4][256][256]; // Stores palette indices
-
-// typedef struct object {
-//     Uint8 x, y, index, attributes;
-// } object_t;
-
-// static object_t objects[40];
-//
-// int comparator(const void *a, const void *b)
-// {
-//     return (((object_t *) a)->x < ((object_t *) b)->x) ? 1 : -1;
-// }
 
 static int cycle_count = 0;
 
@@ -55,100 +38,19 @@ void init_process()
 
 
 
+line_log_t line_logs[GB_SCREEN_HEIGHT];
 
 
-// static inline void
-// read_vram()
-// {
-//     // Fill tilemaps for window and background
-//     size_t map_address = 0x9800;
-//
-//     for (int k = 0; k < 2; k++)
-//         for (int tx = 0; tx < 32; tx++)
-//             for (int ty = 0; ty < 32; ty++)
-//             {
-//                 Uint8 index = memory[map_address++];
-//                 Uint16 address1 = 0x8000 + 16 * index;
-//                 // Exploiting overflow
-//                 index += 128;
-//                 Uint16 address2 = 0x8800 + 16 * index;
-//
-//                 for (int y = 0; y < 8; y++)
-//                 {
-//                     const Uint8 byte1 = memory[address1++];
-//                     const Uint8 byte2 = memory[address1++];
-//                     const Uint8 byte3 = memory[address2++];
-//                     const Uint8 byte4 = memory[address2++];
-//
-//                     for (int x = 0; x < 8; x++)
-//                     {
-//                         tilemaps[ 0 + k ][ tx * 8 + y ][ ty * 8 + x ] =
-//                             (((byte1 << x) & 0x80) >> 7) | (((byte2 << x) & 0x80) >> 6);
-//                         tilemaps[ 2 + k ][ tx * 8 + y ][ ty * 8 + x ] =
-//                             (((byte3 << x) & 0x80) >> 7) | (((byte4 << x) & 0x80) >> 6);
-//                     }
-//                 }
-//             }
-//
-//     // Fill tilemap for objects
-//     // map_address = 0xFE00;
-//     //
-//     // for (int i = 0; i < 40; i++) {
-//     //     objects[i].y = memory[map_address++];
-//     //     objects[i].x = memory[map_address++];
-//     //     objects[i].index = memory[map_address++];
-//     //     objects[i].attributes = memory[map_address++];
-//     // }
-//     //
-//     // qsort(&objects, 40, sizeof(object_t), &comparator);
-// }
-
-
-// static inline void
-// render_line(const SDL_Surface *surface)
-// {
-//     const Uint8 lcdc = memory[LCDC];
-//     const Uint8 ly = memory[LY];
-//     const Uint8 palette[] = { 255, 170, 85, 0 };
-//
-//     if ((lcdc & 0x80) == 0)
-//         return;
-//
-//     // Render background
-//     if (lcdc & 0x01) {
-//         const Uint8 y = memory[SCY] + ly;
-//         Uint8 x = memory[SCX];
-//         const Uint8 k = (lcdc >> 2) & 0x03;
-//
-//         Uint8 *ptr = surface->pixels;
-//         ptr += surface->format->BytesPerPixel * GB_SCREEN_WIDTH * ly;
-//
-//         for (size_t i = 0; i < GB_SCREEN_WIDTH; i++, x++)
-//         {
-//             const Uint8 value = palette[ tilemaps[k][y][x] ];
-//             memset(ptr, SDL_MapRGB(surface->format, value, value, value), surface->format->BytesPerPixel);
-//             ptr += surface->format->BytesPerPixel;
-//         }
-//     }
-//
-//     // Render Window
-//
-//     // Render Objects
-// }
-
-line_log_t scroll_logs[GB_SCREEN_HEIGHT];
-
-
-static inline void log_scroll(const int ly)
+static inline void log_line(const int ly)
 {
-    scroll_logs[ly].lcdc = memory[LCDC];
-    scroll_logs[ly].scy = memory[SCY];
-    scroll_logs[ly].scx = memory[SCX];
-    scroll_logs[ly].bgp = memory[BGP];
-    scroll_logs[ly].obp0 = memory[OBP0];
-    scroll_logs[ly].obp1 = memory[OBP1];
-    scroll_logs[ly].wy = memory[WY];
-    scroll_logs[ly].wx = memory[WX];
+    line_logs[ly].lcdc = memory[LCDC];
+    line_logs[ly].scy = memory[SCY];
+    line_logs[ly].scx = memory[SCX];
+    line_logs[ly].bgp = memory[BGP];
+    line_logs[ly].obp0 = memory[OBP0];
+    line_logs[ly].obp1 = memory[OBP1];
+    line_logs[ly].wy = memory[WY];
+    line_logs[ly].wx = memory[WX];
 }
 
 
@@ -187,21 +89,23 @@ static Uint8 int_ime = 0;
 
 static inline void handle_interrupts()
 {
+    if (memory[IE] & memory[IF])
+        on_halt = 0;
+
     for (int i = 0; ext_ime && int_ime && i < 5; i++)
-        if ((memory[0xffff] & (1 << i)) && (memory[0xff0f] & (1 << i)))
+        if ((memory[IE] & (1 << i)) && (memory[IF] & (1 << i)))
         {
-            memory[sp--] = pc >> 8;
-            memory[sp--] = pc;
+            memory[--sp] = pc >> 8;
+            memory[--sp] = pc;
             pc = 0x0040 + i * 8;
             cycle_count += 5;
 
 #ifdef GENERATE_LOGS
-            fprintf(log_file, "\nINTERRUPT\t\t\t\tie:\t%02X\tif:\t%02X\n", memory[0xffff], memory[0xff0f]);
+            fprintf(log_file, "\nINTERRUPT\t\t\t\tie:\t%02X\tif:\t%02X\n", memory[IE], memory[IF]);
 #endif // GENERATE_LOGS
 
             ext_ime = 0;
-            memory[0xff0f] &= ~(1 << i);
-            on_halt = 0;
+            memory[IF] &= ~(1 << i);
         }
     int_ime = ext_ime;
 }
@@ -214,6 +118,7 @@ static inline void handle_registers()
 
 
     // Handle Joypad Register
+    static Uint8 pj1 = ~0, pj2 = ~0;
     const Uint8* currentKeyStates = SDL_GetKeyboardState( NULL );
     const Uint8 joypad1 = ~(
         (currentKeyStates[SDL_SCANCODE_D]) |
@@ -229,10 +134,20 @@ static inline void handle_registers()
     );
     if ((memory[JOYP] & 0x30) == 0x30)
         memory[JOYP] = 0xFF;
-    else if ((memory[0xff00] & 0x30) == 0x20)
-        memory[0xff00] = 0xE0 | (joypad1 & 0x0F);
-    else if ((memory[0xff00] & 0x30) == 0x10)
-        memory[0xff00] = 0xD0 | (joypad2 & 0x0F);
+    else if ((memory[JOYP] & 0x30) == 0x20) {
+        memory[JOYP] = 0xE0 | (joypad1 & 0x0F);
+        if ((pj1 & joypad1) != pj1) {
+            memory[IF] |= 0x10;     // Set Joypad Interrupt
+            on_halt = 0;
+        }
+    }
+    else if ((memory[JOYP] & 0x30) == 0x10) {
+        memory[JOYP] = 0xD0 | (joypad2 & 0x0F);
+        if ((pj2 & joypad2) != pj2) {
+            memory[IF] |= 0x10;     // Set Joypad Interrupt
+            on_halt = 0;
+        }
+    }
 
 
     // Hanlde Divider Register
@@ -249,24 +164,77 @@ static inline void handle_registers()
     divider = memory[DIV];
 
 
-    // Handle Timer Register
+    // Check Serial Transfer Register
+    static Uint16 sdt_cycles = 0;
+    static int sdt_counter = 0;
+    if (((memory[SC] & 0x81) == 0x81)) {
+        if (sdt_counter == 0) {
+            sdt_counter = 8;
+            memory[SC] |= 0x7E;     // To make sure the other bits are set
+        }
 
+        sdt_cycles += delta_cycles;
+        if (sdt_cycles > 256) {
+            sdt_counter--;
+            memory[SB] = (memory[SB] << 1) | 1;
+            if (sdt_counter == 0) {
+                memory[SC] = 0x7E;
+                memory[IF] |= 0x08;
+                on_halt = 0;
+            }
+            sdt_cycles -= 256;
+        }
+    }
+
+
+    // Handle Timer Register
+    static Uint16 timer_cycles = 0;
+    if (memory[TAC] & 0x04) {
+        const Uint16 frequency = (memory[TAC] & 0x03) == 0 ? 256 : 1 << (1 << (memory[TAC] & 0x03));
+        timer_cycles += delta_cycles;
+        if (timer_cycles > frequency) {
+            memory[TIMA]++;
+            if (memory[TIMA] == 0) {
+                memory[TIMA] = memory[TMA];
+                memory[IF] |= 0x04;     // Set Timer Interrupt
+                on_halt = 0;
+            }
+            timer_cycles -= frequency;
+        }
+    }
 
 
     // Handle different ppu modes
     const int ly = memory[LY];
-    if (ly >= GB_SCREEN_HEIGHT)
-        memory[STAT] = (memory[STAT] & 0xFC) | 1;
-    else if (cycle_count > 57)
+    const Uint8 ppu_mode = memory[STAT] & 0x03;
+    if (!(memory[LCDC] & 0x80))
         memory[STAT] = (memory[STAT] & 0xFC) | 0;
-    else if (cycle_count > 20) {
-        // if (memory[STAT] == 0)
-            log_scroll(ly);
-        memory[STAT] = (memory[STAT] & 0xFC) | 3;
+    else if (ly >= GB_SCREEN_HEIGHT && ppu_mode == 0) {
+        memory[STAT] = (memory[STAT] & 0xFC) | 1;
+        if (memory[STAT] & 0x10) {
+            memory[IF] |= 0x02;     // Set STAT Interrupt
+            on_halt = 0;
+        }
     }
-    else
+    else if (cycle_count > 57 && ppu_mode == 3) {
+        memory[STAT] = (memory[STAT] & 0xFC) | 0;
+        if (memory[STAT] & 0x08) {
+            memory[IF] |= 0x02;     // Set STAT Interrupt
+            on_halt = 0;
+        }
+    }
+    else if (cycle_count > 20 && ppu_mode == 2) {
+        memory[STAT] = (memory[STAT] & 0xFC) | 3;
+        log_line(ly);
+    }
+    else if (cycle_count <= 20 && ((ppu_mode == 1 && ly == 0) || ppu_mode == 0)) {
         memory[STAT] = (memory[STAT] & 0xFC) | 2;
-    // printf("%d ", cycle_count);
+        if (memory[STAT] & 0x20) {
+            memory[IF] |= 0x02;     // Set STAT Interrupt
+            on_halt = 0;
+        }
+    }
+
 
     // Handle DMA Transfer
     if (memory[DMA] <= 0xDF) {
@@ -275,18 +243,26 @@ static inline void handle_registers()
     }
 
 
-    internal_cycles %= CYCLES_PER_LINE;
+    internal_cycles = cycle_count % CYCLES_PER_LINE;
 }
 
 
 void process_and_render_frame(const SDL_Surface *surface)
 {
-    for (size_t i = 0; i < GB_VIRTUAL_HEIGHT; i++) {
-        if ((memory[LY] = i) == GB_SCREEN_HEIGHT) {
-            render_frame(surface, scroll_logs);
-            memory[IF] |= 0x01;     // Set VBlank Interrupt
+    for (size_t i = 0; i < GB_VIRTUAL_HEIGHT;) {
+        if (memory[LCDC] & 0x80) {
+            if ((memory[LY] = i) == GB_SCREEN_HEIGHT) {
+                render_frame(surface, line_logs);
+                memory[IF] |= 0x01;     // Set VBlank Interrupt
+                on_halt = 0;
+            }
+            if ((memory[STAT] & 0x40) && i == memory[LYC]) {
+                memory[STAT] |= 0x04;
+                memory[IF] |= 0x02;     // Set STAT Interrupt
+                on_halt = 0;
+            }
+            i++;
         }
-
 
         while (cycle_count < CYCLES_PER_LINE) {
             handle_interrupts();
@@ -294,9 +270,6 @@ void process_and_render_frame(const SDL_Surface *surface)
             else cycle_count++;
             handle_registers();
         }
-
-        // if (i < GB_SCREEN_HEIGHT)
-        //     render_line(surface);
 
         cycle_count %= CYCLES_PER_LINE;
     }
@@ -308,10 +281,6 @@ void process_and_render_frame(const SDL_Surface *surface)
 static inline void
 execute_instruction()
 {
-
-
-
-
 #ifdef GENERATE_LOGS
         fprintf(log_file, "%04X:\t", pc);
 #endif // GENERATE_LOGS
@@ -352,7 +321,16 @@ execute_instruction()
             case 0x2A: ld_a_mr16(h, l, "hl+"); l += 1; h += !l; break;
             case 0x3A: ld_a_mr16(h, l, "hl-"); h -= !l; l -= 1; break;
 
-            // case 0x08:  fprintf("Unimplemented Opcode 0x08");  exit(1);
+            case 0x08:  // ld [n16], sp
+                n16 = get_ro_mem(pc + 1) | (get_ro_mem(pc + 2) << 8);
+                pc += 2;
+                *get_rw_memptr(n16) = sp & 0xFF;
+                *get_rw_memptr(n16 + 1) = sp >> 8;
+                cycle_count += 5;
+#ifdef GENERATE_LOGS
+                fprintf(log_file, "ld\t[%04X],\tsp\n", n16);
+#endif // GENERATE_LOGS
+                break;
 
             case 0x03: inc_r16(&b, &c, "bc"); break;
             case 0x13: inc_r16(&d, &e, "de"); break;
@@ -417,29 +395,35 @@ execute_instruction()
 
             case 0x07:  // rlca
                 rlc_r8(&a, "a");
+                zf = 0;
                 cycle_count--;
                 break;
             case 0x0F:  // rrca
                 rrc_r8(&a, "a");
+                zf = 0;
                 cycle_count--;
                 break;
             case 0x17:  // rla
                 rl_r8(&a, "a");
+                zf = 0;
                 cycle_count--;
                 break;
             case 0x1F:  // rra
                 rr_r8(&a, "a");
+                zf = 0;
                 cycle_count--;
                 break;
 
             case 0x27:  // daa
-                if ((a & 0x0F) > 0x09)
-                    a += 0x06;
-                if (a > 0x9F) {
-                    a += 0x60;
+                n8 = 0;
+                if (hf || (!nf && (a & 0x0F) > 0x09))
+                    n8 |= 0x06;
+                if (cf || (!nf && a > 0x99)) {
+                    n8 |= 0x60;
                     cf = 1;
-                } else
-                    cf = 0;
+                }
+                if (nf) a -= n8;
+                else a += n8;
                 zf = !a; hf = 0;
                 cycle_count += 1;
 #ifdef GENERATE_LOGS
@@ -572,53 +556,53 @@ execute_instruction()
             //
             // BLOCK 2
             //
-            case 0x80:  add_a_r8(b, "b", 0); break;
-            case 0x81:  add_a_r8(c, "c", 0); break;
-            case 0x82:  add_a_r8(d, "d", 0); break;
-            case 0x83:  add_a_r8(e, "e", 0); break;
-            case 0x84:  add_a_r8(h, "h", 0); break;
-            case 0x85:  add_a_r8(l, "l", 0); break;
+            case 0x80:  add_a_r8(b, "b"); break;
+            case 0x81:  add_a_r8(c, "c"); break;
+            case 0x82:  add_a_r8(d, "d"); break;
+            case 0x83:  add_a_r8(e, "e"); break;
+            case 0x84:  add_a_r8(h, "h"); break;
+            case 0x85:  add_a_r8(l, "l"); break;
             case 0x86:
-              add_a_r8(get_ro_mem(h << 8 | l), "[hl]", 0);
+              add_a_r8(get_ro_mem(h << 8 | l), "[hl]");
               cycle_count += 1;
               break;
-            case 0x87:  add_a_r8(a, "a", 0); break;
+            case 0x87:  add_a_r8(a, "a"); break;
 
-            case 0x88:  add_a_r8(b, "b", 1); break;
-            case 0x89:  add_a_r8(c, "c", 1); break;
-            case 0x8A:  add_a_r8(d, "d", 1); break;
-            case 0x8B:  add_a_r8(e, "e", 1); break;
-            case 0x8C:  add_a_r8(h, "h", 1); break;
-            case 0x8D:  add_a_r8(l, "l", 1); break;
+            case 0x88:  adc_a_r8(b, "b"); break;
+            case 0x89:  adc_a_r8(c, "c"); break;
+            case 0x8A:  adc_a_r8(d, "d"); break;
+            case 0x8B:  adc_a_r8(e, "e"); break;
+            case 0x8C:  adc_a_r8(h, "h"); break;
+            case 0x8D:  adc_a_r8(l, "l"); break;
             case 0x8E:
-                add_a_r8(get_ro_mem(h << 8 | l), "[hl]", 1);
+                adc_a_r8(get_ro_mem(h << 8 | l), "[hl]");
                 cycle_count += 1;
                 break;
-            case 0x8F:  add_a_r8(a, "a", 1); break;
+            case 0x8F:  adc_a_r8(a, "a"); break;
 
-            case 0x90:  sub_a_r8(b, "b", 0); break;
-            case 0x91:  sub_a_r8(c, "c", 0); break;
-            case 0x92:  sub_a_r8(d, "d", 0); break;
-            case 0x93:  sub_a_r8(e, "e", 0); break;
-            case 0x94:  sub_a_r8(h, "h", 0); break;
-            case 0x95:  sub_a_r8(l, "l", 0); break;
+            case 0x90:  sub_a_r8(b, "b"); break;
+            case 0x91:  sub_a_r8(c, "c"); break;
+            case 0x92:  sub_a_r8(d, "d"); break;
+            case 0x93:  sub_a_r8(e, "e"); break;
+            case 0x94:  sub_a_r8(h, "h"); break;
+            case 0x95:  sub_a_r8(l, "l"); break;
             case 0x96:
-                sub_a_r8(get_ro_mem(h << 8 | l), "[hl]", 0);
+                sub_a_r8(get_ro_mem(h << 8 | l), "[hl]");
                 cycle_count += 1;
                 break;
-            case 0x97:  sub_a_r8(a, "a", 0); break;
+            case 0x97:  sub_a_r8(a, "a"); break;
 
-            case 0x98:  sub_a_r8(b, "b", 1); break;
-            case 0x99:  sub_a_r8(c, "c", 1); break;
-            case 0x9A:  sub_a_r8(d, "d", 1); break;
-            case 0x9B:  sub_a_r8(e, "e", 1); break;
-            case 0x9C:  sub_a_r8(h, "h", 1); break;
-            case 0x9D:  sub_a_r8(l, "l", 1); break;
+            case 0x98:  sbc_a_r8(b, "b"); break;
+            case 0x99:  sbc_a_r8(c, "c"); break;
+            case 0x9A:  sbc_a_r8(d, "d"); break;
+            case 0x9B:  sbc_a_r8(e, "e"); break;
+            case 0x9C:  sbc_a_r8(h, "h"); break;
+            case 0x9D:  sbc_a_r8(l, "l"); break;
             case 0x9E:
-                sub_a_r8(get_ro_mem(h << 8 | l), "[hl]", 1);
+                sbc_a_r8(get_ro_mem(h << 8 | l), "[hl]");
                 cycle_count += 1;
                 break;
-            case 0x9F:  sub_a_r8(a, "a", 1); break;
+            case 0x9F:  sbc_a_r8(a, "a"); break;
 
             case 0xA0:  and_a_r8(b, "b"); break;
             case 0xA1:  and_a_r8(c, "c"); break;
@@ -676,25 +660,25 @@ execute_instruction()
             case 0xC6: // add a, n8
                 n8 = get_ro_mem(++pc);
                 sprintf(name, "%02X", n8);
-                add_a_r8(n8, name, 0);
+                add_a_r8(n8, name);
                 cycle_count += 1;
                 break;
             case 0xCE: // adc a, n8
                 n8 = get_ro_mem(++pc);
                 sprintf(name, "%02X", n8);
-                add_a_r8(n8, name, 1);
+                adc_a_r8(n8, name);
                 cycle_count += 1;
                 break;
             case 0xD6: // sub a, n8
                 n8 = get_ro_mem(++pc);
                 sprintf(name, "%02X", n8);
-                sub_a_r8(n8, name, 0);
+                sub_a_r8(n8, name);
                 cycle_count += 1;
                 break;
             case 0xDE: // sbc a, n8
                 n8 = get_ro_mem(++pc);
                 sprintf(name, "%02X", n8);
-                sub_a_r8(n8, name, 1);
+                sbc_a_r8(n8, name);
                 cycle_count += 1;
                 break;
             case 0xE6: // and a, n8
@@ -755,14 +739,14 @@ execute_instruction()
             case 0xDC:  call_cc_n16(cf, "c"); break;
             case 0xCD:  call_cc_n16(1, "");  break;
 
-            // case 0xC7:  rst(0x00);  break;
+            case 0xC7:  rst(0x00);  break;
             case 0xCF:  rst(0x08);  break;
             case 0xD7:  rst(0x10);  break;
             case 0xDF:  rst(0x18);  break;
             case 0xE7:  rst(0x20);  break;
             case 0xEF:  rst(0x28);  break;
             case 0xF7:  rst(0x30);  break;
-            // case 0xFF:  rst(0x38);  break;
+            case 0xFF:  rst(0x38);  break;
 
             case 0xC1:  pop_r16(&b, &c, "bc"); break;
             case 0xD1:  pop_r16(&d, &e, "de"); break;
@@ -799,7 +783,7 @@ execute_instruction()
                 cycle_count += 3;
 #ifdef GENERATE_LOGS
                 fprintf(log_file, "ldh\t[%04X],\ta", n16);
-                fprintf(log_file, "\t\t[%04X]:\t%02X\n", n16, memory[n16]);
+                fprintf(log_file, "\t\t[%04X]:\t%02X\tznhc:\t%d%d%d%d\n", n16, memory[n16], zf, nf, hf, cf);
 #endif // GENERATE_LOGS
                 break;
 
@@ -811,13 +795,22 @@ execute_instruction()
                 cycle_count += 3;
                 break;
 
+            case 0xF2:  // ldh a, [c]
+                a = memory[0xff00 | c];
+                cycle_count += 2;
+#ifdef GENERATE_LOGS
+                fprintf(log_file, "ldh\ta,\t[%04X]", 0xff00 | c);
+                fprintf(log_file, "\t\ta:\t%02X\n", a);
+#endif // GENERATE_LOGS
+                break;
+
             case 0xF0:  // ldh a, [n8]
-                n16 = 0xff00 | memory[++pc];
+                n16 = 0xff00 | get_ro_mem(++pc);
                 a = memory[n16];
                 cycle_count += 3;
 #ifdef GENERATE_LOGS
                 fprintf(log_file, "ldh\ta,\t[%04X]", n16);
-                fprintf(log_file, "\t\ta:\t%02X\n", a);
+                fprintf(log_file, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", a, zf, nf, hf, cf);
 #endif // GENERATE_LOGS
                 break;
 
@@ -827,6 +820,43 @@ execute_instruction()
                 sprintf(name, "[%04X]", n16);
                 ld_r8_r8(&a, "a", get_ro_mem(n16), name);
                 cycle_count += 3;
+                break;
+
+            case 0xE8:  // add sp, e8
+                n8 = get_ro_mem(++pc);
+                sp += (Sint8) n8;
+                zf = 0; nf = 0;
+                hf = (sp & 0xf) < (n8 & 0xf);
+                cf = (sp & 0xff) < n8;
+                cycle_count += 4;
+#ifdef GENERATE_LOGS
+                fprintf(log_file, "ld\tsp,\t%02X\t\t", n8);
+                fprintf(log_file, "sp:\t%04X\n", sp);
+#endif // GENERATE_LOGS
+                break;
+
+            case 0xF8:  // ld hl, sp+n8
+                n8 = get_ro_mem(++pc);
+                n16 = sp + (Sint8) n8;
+                h = n16 >> 8;
+                l = n16;
+                zf = 0; nf = 0;
+                hf = (n16 & 0xf) < (n8 & 0xf);
+                cf = (n16 & 0xff) < n8;
+                cycle_count += 3;
+#ifdef GENERATE_LOGS
+                fprintf(log_file, "ld\thl,\tsp+%02X\t\t", n8);
+                fprintf(log_file, "hl:\t%02X%02X\n", h, l);
+#endif // GENERATE_LOGS
+                break;
+
+            case 0xF9:  // ld sp, hl
+                sp = h << 8 | l;
+                cycle_count += 2;
+#ifdef GENERATE_LOGS
+                fprintf(log_file, "ld\tsp,\thl\t\t");
+                fprintf(log_file, "sp:\t%04X\n", sp);
+#endif // GENERATE_LOGS
                 break;
 
             case 0xF3:  // di
@@ -860,6 +890,10 @@ execute_instruction()
                     case 0x03: rlc_r8(&e, "e"); break;
                     case 0x04: rlc_r8(&h, "h"); break;
                     case 0x05: rlc_r8(&l, "l"); break;
+                    case 0x06:
+                        rlc_r8(get_rw_memptr(h << 8 | l), "[hl]");
+                        cycle_count += 2;
+                        break;
                     case 0x07: rlc_r8(&a, "a"); break;
 
                     case 0x08: rrc_r8(&b, "b"); break;
@@ -868,6 +902,10 @@ execute_instruction()
                     case 0x0B: rrc_r8(&e, "e"); break;
                     case 0x0C: rrc_r8(&h, "h"); break;
                     case 0x0D: rrc_r8(&l, "l"); break;
+                    case 0x0E:
+                        rrc_r8(get_rw_memptr(h << 8 | l), "[hl]");
+                        cycle_count += 2;
+                        break;
                     case 0x0F: rrc_r8(&a, "a"); break;
 
                     case 0x10: rl_r8(&b, "b"); break;
@@ -888,6 +926,10 @@ execute_instruction()
                     case 0x1B: rr_r8(&e, "e"); break;
                     case 0x1C: rr_r8(&h, "h"); break;
                     case 0x1D: rr_r8(&l, "l"); break;
+                    case 0x1E:
+                        rr_r8(get_rw_memptr(h << 8 | l), "[hl]");
+                    cycle_count += 2;
+                    break;
                     case 0x1F: rr_r8(&a, "a"); break;
 
                     case 0x20: sla_r8(&b, "b"); break;
@@ -896,6 +938,10 @@ execute_instruction()
                     case 0x23: sla_r8(&e, "e"); break;
                     case 0x24: sla_r8(&h, "h"); break;
                     case 0x25: sla_r8(&l, "l"); break;
+                    case 0x26:
+                        sla_r8(get_rw_memptr(h << 8 | l), "[hl]");
+                        cycle_count += 2;
+                        break;
                     case 0x27: sla_r8(&a, "a"); break;
 
                     case 0x28: sra_r8(&b, "b"); break;
@@ -904,6 +950,10 @@ execute_instruction()
                     case 0x2B: sra_r8(&e, "e"); break;
                     case 0x2C: sra_r8(&h, "h"); break;
                     case 0x2D: sra_r8(&l, "l"); break;
+                    case 0x2E:
+                        sra_r8(get_rw_memptr(h << 8 | l), "[hl]");
+                        cycle_count += 2;
+                        break;
                     case 0x2F: sra_r8(&a, "a"); break;
 
                     case 0x30: swap_r8(&b, "b"); break;
@@ -912,6 +962,10 @@ execute_instruction()
                     case 0x33: swap_r8(&e, "e"); break;
                     case 0x34: swap_r8(&h, "h"); break;
                     case 0x35: swap_r8(&l, "l"); break;
+                    case 0x36:
+                        swap_r8(get_rw_memptr(h << 8 | l), "[hl]");
+                        cycle_count += 2;
+                        break;
                     case 0x37: swap_r8(&a, "a"); break;
 
                     case 0x38: srl_r8(&b, "b"); break;
@@ -920,6 +974,10 @@ execute_instruction()
                     case 0x3B: srl_r8(&e, "e"); break;
                     case 0x3C: srl_r8(&h, "h"); break;
                     case 0x3D: srl_r8(&l, "l"); break;
+                    case 0x3E:
+                        srl_r8(get_rw_memptr(h << 8 | l), "[hl]");
+                        cycle_count += 2;
+                        break;
                     case 0x3F: srl_r8(&a, "a"); break;
 
                     case 0x50: case 0x58: case 0x60: case 0x68:

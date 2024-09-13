@@ -3,9 +3,9 @@
 
 
 static inline void
-add_a_r8(const Uint8 r8, const char *name, const Uint8 carry)
+add_a_r8(const Uint8 r8, const char *name)
 {
-    a += (r8 + (carry ? cf : 0));
+    a += r8;
     zf = !(a);
     nf = 0;
     hf = (a & 0xf) < (r8 & 0xf);
@@ -13,24 +13,60 @@ add_a_r8(const Uint8 r8, const char *name, const Uint8 carry)
     cycle_count += 1;
 
 #ifdef GENERATE_LOGS
-    fprintf(log_file, "%s\ta,\t%s", carry ? "adc" : "add", name);
+    fprintf(log_file, "add\ta,\t%s", name);
     fprintf(log_file, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", a, zf, nf, hf, cf);
 #endif // GENERATE_LOGS
 }
 
 
 static inline void
-sub_a_r8(const Uint8 r8, const char *name, const Uint8 carry)
+adc_a_r8(Uint8 r8, const char *name)
 {
-    hf = (a & 0xf) < (r8 & 0xf);
-    cf = a < r8;
-    a -= (r8 + (carry ? cf : 0));
+    r8 += cf;
+    a += r8;
     zf = !(a);
     nf = 0;
+    hf = (a & 0xf) < (r8 & 0xf) || (r8 & 0xf) < cf;
+    cf = a < r8 || r8 < cf;
     cycle_count += 1;
 
 #ifdef GENERATE_LOGS
-    fprintf(log_file, "%s\ta,\t%s", carry ? "sbc" : "sub", name);
+    fprintf(log_file, "adc\ta,\t%s", name);
+    fprintf(log_file, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", a, zf, nf, hf, cf);
+#endif // GENERATE_LOGS
+}
+
+
+static inline void
+sub_a_r8(const Uint8 r8, const char *name)
+{
+    hf = (a & 0xf) < (r8 & 0xf);
+    cf = a < r8;
+    a -= r8;
+    zf = !(a);
+    nf = 1;
+    cycle_count += 1;
+
+#ifdef GENERATE_LOGS
+    fprintf(log_file, "sub\ta,\t%s", name);
+    fprintf(log_file, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", a, zf, nf, hf, cf);
+#endif // GENERATE_LOGS
+}
+
+
+static inline void
+sbc_a_r8(Uint8 r8, const char *name)
+{
+    r8 += cf;
+    hf = (a & 0xf) < (r8 & 0xf) || (r8 & 0xf) < cf;
+    cf = a < r8 || r8 < cf;
+    a -= r8;
+    zf = !(a);
+    nf = 1;
+    cycle_count += 1;
+
+#ifdef GENERATE_LOGS
+    fprintf(log_file, "sbc\ta,\t%s", name);
     fprintf(log_file, "\t\ta:\t%02X\tznhc:\t%d%d%d%d\n", a, zf, nf, hf, cf);
 #endif // GENERATE_LOGS
 }

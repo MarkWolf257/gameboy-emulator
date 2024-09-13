@@ -33,9 +33,6 @@ write design decisions on
 why iblk headers dont have any includes
 use of static inline in headers
 
-to do at end:
-eliminate magic numbers as much as possible
-
 
 --INACCURACIES--
 Pixel FIFO is not implemented;
@@ -43,4 +40,5 @@ lcdc, scroll, window position and palettes are logged every line,
 while background, window and objects are mapped every frame.
 
 DMA transfer doesn't make sure that access outside HRAM is blocked;
-It just executes the transfer immediately and doesn't count the cycles.
+It just executes the transfer immediately and
+hopes that the bug is not relied upon.

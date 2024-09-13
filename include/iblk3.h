@@ -6,7 +6,7 @@ static inline void
 ret_cc(const Uint8 cc, const char *name)
 {
     if (cc) {
-        pc = memory[sp + 2] << 8 | memory[sp + 1];
+        pc = memory[sp + 1] << 8 | memory[sp];
         sp += 2;
         pc -= 1;
         cycle_count += 3;
@@ -49,8 +49,8 @@ call_cc_n16(const Uint8 cc, const char *name)
 
     if (cc) {
         pc += 1;
-        memory[sp--] = pc >> 8;
-        memory[sp--] = pc;
+        memory[--sp] = pc >> 8;
+        memory[--sp] = pc;
         pc = n16 - 1;
         cycle_count += 3;
     }
@@ -65,8 +65,8 @@ static inline void
 rst(const Uint16 address)
 {
     pc += 1;
-    memory[sp--] = pc >> 8;
-    memory[sp--] = pc;
+    memory[--sp] = pc >> 8;
+    memory[--sp] = pc;
     pc = address - 1;
     cycle_count += 4;
 
@@ -79,8 +79,8 @@ rst(const Uint16 address)
 static inline void
 pop_r16(Uint8 *hi, Uint8 *lo, const char *name)
 {
-    *lo = memory[++sp];
-    *hi = memory[++sp];
+    *lo = memory[sp++];
+    *hi = memory[sp++];
     cycle_count += 3;
 
 #ifdef GENERATE_LOGS
@@ -93,8 +93,8 @@ pop_r16(Uint8 *hi, Uint8 *lo, const char *name)
 static inline void
 push_r16(const Uint8 hi, const Uint8 lo, const char *name)
 {
-    memory[sp--] = hi;
-    memory[sp--] = lo;
+    memory[--sp] = hi;
+    memory[--sp] = lo;
     cycle_count += 4;
 
 #ifdef GENERATE_LOGS
