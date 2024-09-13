@@ -1,4 +1,4 @@
-#define GENERATE_LOGS
+// #define GENERATE_LOGS
 
 #include "../include/memory.h"
 #include "../include/process.h"

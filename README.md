@@ -41,7 +41,27 @@ back into this, I want to follow this roadmap ordered by priority:
 ## How to build
 To build the emulator from source code you will need the sdl header files in your compiler headers.
 Then you can use either the cmake or simply compile and link all the files in the src folder with your compiler.
-Example commands
-```bash
 
+For example on windows I used this:
+
+```commandline
+mkdir build
+cd build
+cmake ..
+ninja
+```
+
+or this:
+
+```commandline
+cd src
+gcc main.c process.c graphics.c -lmingw32 -lSDL2Main -lSDL2 -o ../emulator
+```
+
+
+## How to run
+To run the emulator with a ROM file:
+
+```commandline
+emulator tetris.gb
 ```
