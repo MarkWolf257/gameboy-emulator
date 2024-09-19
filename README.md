@@ -45,6 +45,7 @@ back into this, I want to follow this roadmap ordered by priority:
 
 ## How to build
 To build the emulator from source code you will need the sdl header files in your compiler headers.
+You will also need the necessary .dll files where the compiler can locate it.
 Then you can use either the cmake or simply compile and link all the files in the src folder with your compiler.
 
 For example on windows I used this:
