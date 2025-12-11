@@ -15,14 +15,14 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: windows-latest
-            asset_name: MyGame-Windows.zip
-            exe_name: MyGame.exe
+            asset_name: emulator-windows.zip
+            exe_name: emulator.exe
           - os: ubuntu-latest
-            asset_name: MyGame-Linux.tar.gz
-            exe_name: MyGame
+            asset_name: emulator-ubuntu.tar.gz
+            exe_name: emulator
           - os: macos-latest
-            asset_name: MyGame-macOS.tar.gz
-            exe_name: MyGame
+            asset_name: emulator-macos.tar.gz
+            exe_name: emulator
 
     steps:
       - name: Checkout code
