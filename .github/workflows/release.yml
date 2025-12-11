@@ -52,16 +52,31 @@ jobs:
 
       # --- PACKAGING ---
 
-      # WINDOWS: Copy DLL and Zip
+      # WINDOWS: Copy DLL and Zip (Robust Version)
       - name: Package Windows
         if: runner.os == 'Windows'
         shell: powershell
         run: |
+          # 1. Enter the executable directory
           cd build/Release
-          # Copy the SDL2.dll from the installation folder to the exe folder
-          tree "$env:SDL2_ROOT/bin"
-          copy "$env:SDL2_ROOT/lib/x64/SDL2.dll" .
-          # Zip everything in the Release folder
+          
+          # 2. Find SDL2.dll anywhere inside the SDL root folder
+          # This fixes the issue whether it's in /lib/x64, /bin, or /lib
+          $sdl_dll = Get-ChildItem -Path "$env:SDL2_ROOT" -Filter "SDL2.dll" -Recurse | Select-Object -First 1
+          
+          if ($sdl_dll) {
+           Write-Host "Found SDL2.dll at: $($sdl_dll.FullName)"
+           Copy-Item $sdl_dll.FullName -Destination .
+          } else {
+           Write-Error "Could not find SDL2.dll in $env:SDL2_ROOT"
+          }
+          
+          # 3. Verify it is actually there
+          if (-not (Test-Path "SDL2.dll")) {
+            Write-Error "Copy failed! SDL2.dll is missing from the current folder."
+          }
+          
+          # 4. Zip everything
           Compress-Archive -Path * -DestinationPath ../../${{ matrix.asset_name }}
 
       # LINUX/MAC: Tarball
