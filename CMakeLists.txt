@@ -12,4 +12,8 @@ add_executable(emulator src/main.c
         include/graphics.h
 )
 
-target_link_libraries(emulator mingw32 SDL2::SDL2main SDL2::SDL2)
+if(MINGW)
+    target_link_libraries(emulator mingw32 SDL2::SDL2main SDL2::SDL2)
+else()
+    target_link_libraries(emulator SDL2::SDL2main SDL2::SDL2)
+endif()
