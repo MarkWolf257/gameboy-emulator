@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            asset_name: MyGame-Windows.zip
+            exe_name: MyGame.exe
+          - os: ubuntu-latest
+            asset_name: MyGame-Linux.tar.gz
+            exe_name: MyGame
+          - os: macos-latest
+            asset_name: MyGame-macOS.tar.gz
+            exe_name: MyGame
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SDL2
+        uses: libsdl-org/setup-sdl@v1
+        with:
+          version: 2-latest
+          install-linux-dependencies: true
+
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      # Windows Packaging (Zip includes DLL)
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          cd build/Release
+          copy "$env:SDL2_ROOT/lib/x64/SDL2.dll" .
+          Compress-Archive -Path * -DestinationPath ../../${{ matrix.asset_name }}
+
+      # Linux/Mac Packaging (Tar)
+      - name: Package Unix
+        if: runner.os != 'Windows'
+        run: |
+          cd build
+          tar -czvf ../${{ matrix.asset_name }} ${{ matrix.exe_name }}
+
+      # Upload to temporary storage
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-${{ matrix.os }}
+          path: ${{ matrix.asset_name }}
+
+  create_release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: asset-*
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.zip
+            *.tar.gz
+          generate_release_notes: true
+          draft: true
