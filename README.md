@@ -1,5 +1,8 @@
 # My Gameboy Emulator
-This is the first ever emulator I have developed on my own as a learning project.
+My first attempt at emulator development.
+
+<br />
+<img src="tetris_screenshot.png">
 
 <br />
 
