@@ -3,9 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*' # Triggers only when you push a tag like v1.0, v1.1, etc.
 
 jobs:
+  # JOB 1: BUILD (Parallel for Windows, Linux, macOS)
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -27,41 +28,57 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SDL2
+      # --- LINUX: Use System Package Manager (Fixes Network Errors) ---
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
+
+      # --- WINDOWS/MAC: Use Official Action ---
+      - name: Setup SDL2 (Windows/Mac)
+        if: runner.os != 'Linux'
         uses: libsdl-org/setup-sdl@v1
         with:
           version: 2-latest
-          install-linux-dependencies: true
 
+      # --- COMPILING ---
       - name: Configure CMake
+        # Note: We build in a separate "build" folder to keep source clean
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build
+      - name: Build Project
         run: cmake --build build --config Release
 
-      # Windows Packaging (Zip includes DLL)
+      # --- PACKAGING ---
+
+      # WINDOWS: Copy DLL and Zip
       - name: Package Windows
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           cd build/Release
+          # Copy the SDL2.dll from the installation folder to the exe folder
           copy "$env:SDL2_ROOT/lib/x64/SDL2.dll" .
+          # Zip everything in the Release folder
           Compress-Archive -Path * -DestinationPath ../../${{ matrix.asset_name }}
 
-      # Linux/Mac Packaging (Tar)
+      # LINUX/MAC: Tarball
       - name: Package Unix
         if: runner.os != 'Windows'
         run: |
           cd build
+          # Create a compressed tarball of the executable
           tar -czvf ../${{ matrix.asset_name }} ${{ matrix.exe_name }}
 
-      # Upload to temporary storage
+      # --- UPLOAD TO TEMP STORAGE ---
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: asset-${{ matrix.os }}
           path: ${{ matrix.asset_name }}
 
+  # JOB 2: PUBLISH RELEASE
   create_release:
     needs: build
     runs-on: ubuntu-latest
@@ -77,8 +94,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
+          draft: true
+          # This filter ensures ONLY the archives are published (no stray files)
           files: |
             *.zip
             *.tar.gz
-          generate_release_notes: true
-          draft: true

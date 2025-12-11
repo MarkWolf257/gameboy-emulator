@@ -3,7 +3,7 @@ project(gameboy_emulator C)
 
 set(CMAKE_C_STANDARD 11)
 
-find_package(SDL2 CONFIG REQUIRED)
+find_package(SDL2 REQUIRED)
 
 add_executable(emulator src/main.c
         src/process.c
