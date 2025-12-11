@@ -59,7 +59,7 @@ jobs:
         run: |
           cd build/Release
           # Copy the SDL2.dll from the installation folder to the exe folder
-          tree $env:SDL2_ROOT
+          tree "$env:SDL2_ROOT/bin"
           copy "$env:SDL2_ROOT/lib/x64/SDL2.dll" .
           # Zip everything in the Release folder
           Compress-Archive -Path * -DestinationPath ../../${{ matrix.asset_name }}
